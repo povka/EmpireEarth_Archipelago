@@ -1,0 +1,28 @@
+name: asapaska
+description: Empire Earth Archipelago
+game: Empire Earth
+requires:
+  version: 0.6.7
+
+Empire Earth:
+  # The epoch your skirmish must START in. Set the same epoch when you create
+  # the skirmish, or the client will warn you that checks have been skipped.
+  # Must come before goal_epoch. One of:
+  #   prehistoric_age, stone_age, copper_age, bronze_age, dark_age,
+  #   middle_ages, renaissance, imperial_age, industrial_age, atomic_age_ww1,
+  #   atomic_age_ww2, atomic_age_modern, digital_age, nano_age
+  starting_epoch: prehistoric_age
+
+  # The epoch you must reach to win. Every epoch up to and including this one
+  # becomes an unlock item and a check; anything beyond is left out entirely.
+  # One of:
+  #   stone_age, copper_age, bronze_age, dark_age, middle_ages, renaissance,
+  #   imperial_age, industrial_age, atomic_age_ww1, atomic_age_ww2,
+  #   atomic_age_modern, digital_age, nano_age, space_age
+  goal_epoch: space_age
+
+  bundle_size: 500
+
+  # Play Empire Earth's building-select click when the overlay shows a
+  # message. Set to false if you find it distracting.
+  message_sound: true
