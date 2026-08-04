@@ -258,4 +258,75 @@ UNIT_FAMILY_BY_NAME: dict[str, str] = {
     'Priest': 'Priest',
 }
 
+# display name -> earliest epoch it can be built in. A check for
+# something you cannot build yet must require the epochs that unlock
+# it, or generation can hide a progression item behind itself.
+BUILDING_MIN_EPOCH: dict[str, int] = {
+    'Barracks': 1,
+    'Town Center': 1,
+    'Dock': 2,
+    'House': 1,
+    'Temple': 2,
+    'Capitol': 1,
+    'Farm': 3,
+    'Settlement': 1,
+    'Granary': 3,
+    'Archery Range': 2,
+    'University': 3,
+    'Hospital': 3,
+    'Siege Factory': 4,
+    'Stable': 3,
+    'Navy Yard': 10,
+    'Airport': 10,
+    'Tank Factory': 10,
+    'Cyber Factory': 13,
+    'Cyber Laboratory': 13,
+    'Fortress': 3,
+}
+
+# family -> earliest epoch any of its members appears in
+UNIT_FAMILY_MIN_EPOCH: dict[str, int] = {
+    'Citizen': 1,
+    'Human Sword': 1,
+    'Human Spear': 2,
+    'Human Archer': 2,
+    'Human Musket': 6,
+    'Human Machine Gun': 10,
+    'Spear Thrower': 4,
+    'Mounted Archer': 5,
+    'Mounted Spear': 4,
+    'Lancer': 3,
+    'Curiassier': 7,
+    'Siege': 2,
+    'Ram': 4,
+    'Machines': 7,
+    'Medieval Field Weapon': 4,
+    'Tank': 10,
+    'Tank - Strong': 10,
+    'Anti Tank': 10,
+    'Land AA': 10,
+    'Aircraft': 10,
+    'Bomber': 10,
+    'Atomic Bomber': 11,
+    'Helicopter': 9,
+    'Ship': 2,
+    'Battleship': 3,
+    'Submarine': 10,
+    'Priest': 2,
+}
+
+# database name -> (display name, earliest epoch it can be built in).
+# Wonders have no per-epoch variants, so none of them ever expires; the
+# epoch is a floor, and is why a wonder is only a usable check when the
+# seed's goal epoch reaches it.
+WONDERS: dict[str, tuple[str, int]] = {
+    'w  Coliseum': ('Coliseum', 3),
+    'w  Ishtar gates': ('Ishtar gates', 3),
+    'w  Library of Alexandria': ('Library of Alexandria', 3),
+    'w  Lighthouse at Alexandria': ('Lighthouse at Alexandria', 3),
+    'w  Temple of Zeus': ('Temple of Zeus', 3),
+    'w  Time Machine': ('Time Machine', 14),
+    'w  Tower of Babylon': ('Tower of Babylon', 3),
+}
+
 FAMILY_FIELD_OFFSET = 0x68  # within a dbobjects.dat record

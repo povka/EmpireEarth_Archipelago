@@ -5,8 +5,19 @@ requires:
   version: 0.6.7
 
 Empire Earth:
-  # The epoch your skirmish must START in. Set the same epoch when you create
-  # the skirmish, or the client will warn you that checks have been skipped.
+  # Everything below is enforced by the client while it runs: it writes these
+  # onto Empire Earth's skirmish setup screen and puts them back if you change
+  # them, so the match always matches the seed. Cheat codes are always off.
+
+  # What completes the seed:
+  #   reach_epoch     reach goal_epoch          (needs wonders_for_victory: 0)
+  #   wonder_victory  build the wonders         (needs wonders_for_victory > 0)
+  #   either          whichever you manage first
+  # Empire Earth ends the match on a wonder victory, so wonders_for_victory and
+  # this option have to agree - generation refuses a seed where they do not.
+  goal: reach_epoch
+
+  # The epoch your skirmish must START in. Set by the client for you.
   # Must come before goal_epoch. One of:
   #   prehistoric_age, stone_age, copper_age, bronze_age, dark_age,
   #   middle_ages, renaissance, imperial_age, industrial_age, atomic_age_ww1,
@@ -21,8 +32,66 @@ Empire Earth:
   #   atomic_age_modern, digital_age, nano_age, space_age
   goal_epoch: space_age
 
-  bundle_size: 500
+  # tiny, small, medium, large, huge, gigantic
+  map_size: medium
 
-  # Play Empire Earth's building-select click when the overlay shows a
-  # message. Set to false if you find it distracting.
-  message_sound: true
+  # tournament_low, tournament_defensive, standard_low, standard_high,
+  # deathmatch
+  resources: standard_low
+
+  # tournament or standard
+  game_variant: standard
+
+  # easy, medium, hard
+  difficulty: medium
+
+  # slow, standard, fast, very_fast
+  game_speed: standard
+
+  # Population limit, 50-1200. Rounded to the nearest 50 the game offers.
+  unit_limit: 300
+
+  # Wonders needed to win, in game and in Archipelago alike. Must be 0 for the
+  # reach_epoch goal and 1-6 for the others. Above 0, each wonder built is also
+  # a check; the Time Machine only counts in a Space Age seed.
+  wonders_for_victory: 0
+
+  reveal_map: false
+  use_custom_civs: false
+  lock_teams: false
+  lock_speed: false
+
+  # Stop Empire Earth ending the match on its own. A skirmish needs an
+  # opponent, so without this a run can be cut short by wiping the AI out, by
+  # being wiped out, or by a wonder victory - none of which is your goal. The
+  # wonder goal still works; the client counts wonders itself.
+  prevent_match_end: true
+
+  # What to do about the computer player the game forces you to have. It
+  # cannot be removed - the game refuses a one-player match and refuses to
+  # let everyone share a team - and it cannot be killed, eliminated, starved
+  # or switched off afterwards either, so this only chooses how it behaves.
+  #   hostile  - left alone; it plays normally and can cost you buildings,
+  #              but prevent_match_end stops it ever ending your run
+  #   allied   - never fights you at all, but allies share line of sight, so
+  #              its exploration uncovers your map
+  opponents: hostile
+
+  # Show Archipelago messages on the game's own message line, the one it uses
+  # for things like "Player 'Babylon' is victorious!", prefixed --AP--. This
+  # is the only feature that runs code inside the game rather than just
+  # reading and writing its memory; no game file is touched. The on-screen
+  # overlay keeps running either way.
+  ingame_messages: true
+
+  # When you complete the Archipelago goal, have Empire Earth end the match as
+  # a win, instead of leaving it running. Works by briefly detouring one
+  # function so the game runs its own end-of-match code; the detour undoes
+  # itself immediately and no file is touched.
+  apply_ingame_win: true
+
+
+  # Map Type is not on this list: the client cannot set it, so pick whichever
+  # one you like on the setup screen.
+
+  bundle_size: 500

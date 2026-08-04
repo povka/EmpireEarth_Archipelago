@@ -1,21 +1,50 @@
 # The built apworld IS tracked: it is what people download and drop into
-# Archipelago's custom_worlds folder. Rebuild it with build_apworld.ps1 and
-# commit the result whenever the world changes.
+# Archipelago's custom_worlds folder. Rebuild it with tools/build_apworld.py
+# and commit the result whenever the world changes.
 
 # Generated multiworlds and spoilers
 /output/
 
-# Reverse-engineering and development tooling. Not part of the apworld and
-# not needed to build or run it: memory scanners, disassembly helpers, RTTI
-# and archive readers, and the one-off probes used to find the addresses
-# documented in notes/REVERSE.md.
+# Reverse-engineering tooling: memory scanners, disassembly helpers, RTTI and
+# archive readers, and the one-off probes used to find the addresses written up
+# in notes/REVERSE.md. None of it is part of the apworld.
 #
-# Two of these are arguably worth tracking if you ever want to regenerate or
-# test outside an Archipelago source checkout:
-#   tools/gen_objects.py     - regenerates world/empire_earth/Objects.py
-#   tools/test_generation.py - drives ArchipelagoGenerate over every option
-# Un-ignore them with:  git add -f tools/gen_objects.py
-/tools/
+# The contents are ignored rather than the directory itself, because git cannot
+# un-ignore a file inside an ignored directory.
+/tools/*
+/tools/data/*
+/tools/snapshots/
+
+# ...except what this repository cannot rebuild itself without.
+#
+# Four modules under world/empire_earth are generated, and these are the only
+# things that can regenerate them - two of them from a *running game*, which is
+# not something a contributor could reconstruct by reading the source. The
+# build and the test suite are here for the same reason: without them there is
+# no way to package the world, or to tell whether a seed is winnable.
+!/tools/build_apworld.py
+!/tools/test_generation.py
+
+# -> world/empire_earth/Objects.py        buildings, units, wonders
+!/tools/gen_objects.py
+# -> world/empire_earth/Producers.py      which building makes which unit
+!/tools/gen_producers.py
+# -> world/empire_earth/Technologies.py   needs Empire Earth open, in a match
+!/tools/gen_technologies.py
+# -> world/empire_earth/BuildingEpochs.py needs Empire Earth open, in a match
+!/tools/gen_building_epochs.py
+
+# Libraries the above import.
+!/tools/blast.py
+!/tools/dbobjects.py
+!/tools/eemem.py
+!/tools/install.py
+!/tools/ssa_extract.py
+
+# The wiki's technology list, joined against the running game to build
+# Technologies.py. Not derivable from anything else in the repository.
+!/tools/data/
+!/tools/data/technologies.tsv
 
 # Python bytecode
 __pycache__/

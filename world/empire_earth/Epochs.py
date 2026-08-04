@@ -188,7 +188,14 @@ class EpochAccess:
         return ok and self.proc.write_value(addr + EPOCH_BUILT, "i32", built)
 
     def apply(self, unlocked: set[int]) -> tuple[int, int]:
-        """Lock every future epoch not in `unlocked`. Returns (locked, opened).
+        """Lock every future epoch not yet unlocked. Returns (locked, opened).
+
+        Only the unbroken run of unlocked epochs above the current one is
+        opened. Empire Earth offers the nearest available epoch, so opening one
+        further up while a nearer one is still locked lets the player skip
+        straight past it: holding `Epoch: Dark Age` without `Epoch: Bronze Age`
+        put a Dark Age button on a Copper Age capitol, and the Bronze Age check
+        could then never be sent.
 
         Epochs already entered are left alone - retracting an epoch you are
         standing in would be nonsense, and the flag there is historical.
@@ -197,10 +204,11 @@ class EpochAccess:
         if reached is None:
             return 0, 0
         n_lock = n_open = 0
+        chain = True
         for i in range(reached + 1, NUM_EPOCHS):
-            should_open = i in unlocked
-            if self.set_locked(i, not should_open):
-                if should_open:
+            chain = chain and i in unlocked
+            if self.set_locked(i, not chain):
+                if chain:
                     n_open += 1
                 else:
                     n_lock += 1

@@ -1,0 +1,111 @@
+# Technologies, from the Empire Earth wiki's Technology page.
+#   https://empireearth.fandom.com/wiki/Technology_(Empire_Earth)
+#
+# name <TAB> building <TAB> epoch index
+#
+# Epoch advances are deliberately absent: those are already `Reach <epoch>`
+# checks, and the Capitol offers them as research like anything else.
+#
+# Only five buildings research anything, and the Capitol is never locked, so a
+# technology's building requirement only ever bites for Temple, University,
+# Hospital and Granary.
+Sandals	Temple	0
+Mysticism	Temple	0
+Ancestor Worship	Temple	1
+Ceremonial Burial	Temple	1
+Shamanism	Temple	1
+Hafted Tools	Capitol	1
+Mythology	Temple	2
+Polytheism	Temple	2
+Fine-Edged Tools	Capitol	2
+Hand Axe	Capitol	2
+Oil Lamp	University	2
+Herbal Medicines	Hospital	2
+Irrigation	Granary	2
+Upgrade to Wall & Tower - Copper	Capitol	2
+Oracle	Temple	3
+Monotheism	Temple	3
+Philosophy	University	3
+Pulley	University	3
+Hippocratic Oath	Hospital	3
+Metal Casting	Capitol	3
+Hardened Chisel	Capitol	3
+Upgrade to Wall & Tower - Bronze	Capitol	3
+Prophecy	Temple	4
+Sainthood	Temple	4
+Excommunication	Temple	4
+Commercial Law	University	4
+Cofferdam	University	4
+Comparative Anatomy	Hospital	4
+Pharmacy	Hospital	4
+Sanitation	Hospital	4
+Falconry	Capitol	4
+Iron Saw	Capitol	4
+Crusades	Temple	5
+Inquisition	Temple	5
+Indulgences	Temple	5
+Bulls-Eye Lantern	University	5
+Law Schools	University	5
+Wheeled Plow	Granary	5
+Amalgamation	Capitol	5
+Shaft Mining	Capitol	5
+Upgrade to Wall & Tower - Medieval	Capitol	5
+Tarot	Temple	6
+Astrology	Temple	6
+Printing Press	Temple	6
+Human Anatomy	Hospital	6
+Quarantine	Hospital	6
+Windlass	Capitol	6
+Occultism	Temple	7
+Reformation	Temple	7
+Missionaries	Temple	7
+Scientific Method	University	7
+Strengthened Concrete	University	7
+Dry Dock	University	7
+Orthopedics	Hospital	7
+Chemical Drugs	Hospital	7
+Land Conservation	Capitol	7
+Forestry	Capitol	7
+Upgrade to Wall & Tower - Imperial	Capitol	7
+Sunday School	Temple	8
+Religious Tolerance	Temple	8
+Gas Lamps	University	8
+Pasteurization	Hospital	8
+Anesthesia	Hospital	8
+Enclosure	Granary	8
+Steam Engine	Capitol	8
+Mining Explosives	Capitol	8
+Radio Services	Temple	9
+Civil Liberties	University	9
+Vitamins	Hospital	9
+Hammer Drilling Rigs	Capitol	9
+Upgrade to Wall & Tower - Concrete	Capitol	9
+Televangelism	Temple	10
+Scuba Repairs	University	10
+Building Codes	University	10
+DNA Research	Hospital	10
+Vaccinations	Hospital	10
+Environmental Law	Capitol	10
+Mechanized Logging	Capitol	10
+Religious Resurgence	Temple	11
+Magnetic Resonance Imaging	Hospital	11
+Pesticides	Granary	11
+Hydraulic Mining	Capitol	11
+Basic Oxygen Furnace	Capitol	11
+Virtual Services	Temple	12
+Digital Library	University	12
+Genetic Engineering	Hospital	12
+Self Sufficiency	Capitol	12
+Upgrade to Wall & Tower - Laser	Capitol	12
+Mind Control	Temple	13
+Cybernetics	Hospital	13
+Anti-Aging Pill	Hospital	13
+Hydroponics	Granary	13
+Atom Manipulation	Capitol	13
+Core Mining	Capitol	13
+Faith Healing	Temple	14
+Quantum Theology	Temple	14
+Zero-G Engineer	University	14
+Damage Control	Hospital	14
+Robotic Farm	Granary	14
+Upgrade to Wall & Tower - Space	Capitol	14

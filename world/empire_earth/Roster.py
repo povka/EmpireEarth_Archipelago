@@ -24,6 +24,13 @@ USTRING_VTABLE_RVA = 0x99C24
 UWSTRING_VTABLE_RVA = 0x99C2C
 ENGINE_DLL = "Low-Level Engine.dll"
 
+# 0 while an object is still a construction site, 1 once it stands. The roster
+# lists a building the moment its foundation is placed, so this is the only
+# thing separating "started" from "finished". Verified live: a Settlement read
+# 0 here for the ten seconds it took to build, then 1; every finished object -
+# buildings, citizens, path points alike - reads 1.
+CONSTRUCTED_OFFSET = 0x34C
+
 
 class Roster:
     """Enumerates the local player's objects and names their types."""
@@ -104,6 +111,28 @@ class Roster:
         if name:
             self._def_cache[definition] = name
         return name
+
+    def is_complete(self, unit: int) -> bool:
+        """False while the object is still a construction site."""
+        raw = self.proc.read(unit + CONSTRUCTED_OFFSET, 1)
+        return bool(raw and raw[0])
+
+    def survey(self) -> tuple[set[str], set[str]]:
+        """(every type owned, types with at least one finished instance).
+
+        Both come from one pass over the roster, because the callers want them
+        together and each pass costs a read per object.
+        """
+        owned: set[str] = set()
+        finished: set[str] = set()
+        for unit in self.units():
+            name = self.type_name(unit)
+            if not name:
+                continue
+            owned.add(name)
+            if self.is_complete(unit):
+                finished.add(name)
+        return owned, finished
 
     def owned_type_names(self) -> set[str]:
         """Every distinct type the player currently owns."""

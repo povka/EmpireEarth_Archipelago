@@ -23,6 +23,19 @@ EXE_NAMES = ("EE-AOC.exe", "Empire Earth.exe")
 
 RESOURCE_NAMES = ("Food", "Wood", "Stone", "Gold", "Iron")
 
+# How a player's match ended, on the player object. Found by resigning and
+# watching: the resigning player went 0 -> 2 exactly as the game announced the
+# other one victorious, and that opponent read 1.
+#
+# This matters because holding victory off stops the match *tearing down*, not
+# the defeat itself: a defeated player is left unable to act in a match that
+# never ends, and their units stay in the roster, so nothing else the client
+# watches would notice.
+OUTCOME_OFFSET = 0x0A28
+OUTCOME_UNDECIDED = 0
+OUTCOME_VICTORIOUS = 1
+OUTCOME_DEFEATED = 2
+
 # A stockpile above this is treated as a bad pointer rather than a real value.
 SANE_MAX = 100_000_000
 
@@ -62,17 +75,46 @@ class Profile:
             return False
 
 
+# The Steam release (26 May 2026) ships the *same* binary as GOG: all seven PE
+# sections are byte-identical, and it has the same image base, section layout
+# and (lack of) ASLR. Only the file is larger, by 15,720 bytes of appended data
+# outside the sections - a signature or store wrapper. So every address here is
+# valid for both, and the two profiles differ only in the size they match on.
+_AOC_ADDRESSES = dict(
+    exe="EE-AOC.exe",
+    player_table=0x00930DB4,
+    resource_offset=0xAFC,
+    player_index=1,
+    local_index_global=0x009318C4,
+)
+
 PROFILES: list[Profile] = [
     Profile(
         name="GOG Empire Earth Gold - Art of Conquest",
-        exe="EE-AOC.exe",
         exe_size=6_262_784,
-        player_table=0x00930DB4,
-        resource_offset=0xAFC,
-        player_index=1,
-        local_index_global=0x009318C4,
+        **_AOC_ADDRESSES,
+    ),
+    Profile(
+        name="Steam Empire Earth Gold - Art of Conquest",
+        exe_size=6_278_504,
+        **_AOC_ADDRESSES,
     ),
 ]
+
+def profile_for(exe_path: str) -> Profile | None:
+    """The address profile matching this executable, or None."""
+    for p in PROFILES:
+        if p.matches(exe_path):
+            return p
+    # Same executable name but an unexpected size. Returned anyway so the
+    # caller can warn rather than silently doing nothing, but a different build
+    # will have different addresses and the layout checks should catch it.
+    base = os.path.basename(exe_path).lower()
+    for p in PROFILES:
+        if p.exe.lower() == base:
+            return p
+    return None
+
 
 class ResourceAccess:
     """Reads and writes a player's resource stockpile through a Profile."""

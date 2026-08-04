@@ -18,6 +18,9 @@ psapi = ctypes.WinDLL("psapi", use_last_error=True)
 # QUERY_INFO | VM_READ | VM_WRITE | VM_OPERATION | CREATE_THREAD
 ACCESS = 0x0400 | 0x0010 | 0x0020 | 0x0008 | 0x0002
 MEM_COMMIT = 0x1000
+MEM_PRIVATE = 0x20000
+MEM_MAPPED = 0x40000
+MEM_IMAGE = 0x1000000
 PAGE_GUARD = 0x100
 READABLE = {0x02, 0x04, 0x08, 0x20, 0x40, 0x80}
 LIST_MODULES_32BIT = 0x01
@@ -59,6 +62,11 @@ k32.VirtualAllocEx.argtypes = [
     wt.HANDLE, ctypes.c_ulonglong, ctypes.c_size_t, wt.DWORD, wt.DWORD,
 ]
 k32.VirtualAllocEx.restype = ctypes.c_ulonglong
+k32.VirtualProtectEx.argtypes = [
+    wt.HANDLE, ctypes.c_ulonglong, ctypes.c_size_t, wt.DWORD,
+    ctypes.POINTER(wt.DWORD),
+]
+k32.VirtualProtectEx.restype = wt.BOOL
 k32.VirtualFreeEx.argtypes = [
     wt.HANDLE, ctypes.c_ulonglong, ctypes.c_size_t, wt.DWORD,
 ]
@@ -201,6 +209,18 @@ class GameProcess:
     def free(self, addr: int) -> bool:
         return bool(k32.VirtualFreeEx(self.h, addr, 0, MEM_RELEASE))
 
+    def protect(self, addr: int, size: int,
+                flags: int = PAGE_EXECUTE_READWRITE) -> int | None:
+        """Change page protection in the target. Returns the previous flags.
+
+        Needed to write to the game's code section, which is read-only. The
+        change is to this process's pages only and disappears with it.
+        """
+        old = wt.DWORD(0)
+        if not k32.VirtualProtectEx(self.h, addr, size, flags, ctypes.byref(old)):
+            return None
+        return old.value
+
     def run_thread(self, entry: int, arg: int = 0, timeout_ms: int = 5000):
         """Run `entry` on a new thread in the target. Returns its exit code.
 
@@ -255,7 +275,7 @@ class GameProcess:
             out.append((name.value, mi.lpBaseOfDll, mi.SizeOfImage))
         return out
 
-    def regions(self):
+    def regions(self, want_image=True, want_private=True, want_mapped=True):
         mbi = MBI64()
         addr = 0
         while addr < 0x7FFFFFFF:
@@ -263,13 +283,32 @@ class GameProcess:
                 break
             if mbi.RegionSize == 0:
                 break
+            wanted = {
+                MEM_IMAGE: want_image,
+                MEM_PRIVATE: want_private,
+                MEM_MAPPED: want_mapped,
+            }.get(mbi.Type, False)
             if (
-                mbi.State == MEM_COMMIT
+                wanted
+                and mbi.State == MEM_COMMIT
                 and (mbi.Protect & 0xFF) in READABLE
                 and not (mbi.Protect & PAGE_GUARD)
             ):
                 yield mbi.BaseAddress, mbi.RegionSize
             addr = mbi.BaseAddress + mbi.RegionSize
+
+    def snapshot(self, **kw) -> list[tuple[int, bytes]]:
+        """Read matching regions in bulk, as [(base, data), ...].
+
+        Heap objects the game allocates - tech tree nodes among them - live in
+        MEM_PRIVATE, so a scan for one can skip the image and mapped files.
+        """
+        out = []
+        for base, size in self.regions(**kw):
+            data = self.read(base, size)
+            if data:
+                out.append((base, data))
+        return out
 
 
 def attach(*exe_names: str) -> GameProcess | None:

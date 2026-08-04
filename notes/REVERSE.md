@@ -396,8 +396,9 @@ start at **offset 16**. Base game: 3,739 entries; AoC: 826.
 Almost every entry is **PKWARE DCL-imploded** behind a `PK01` header
 (`'PK01'`, u32 uncompressed size, 4 reserved, then the DCL stream). That is why
 a 155 MB archive shows only 22 `RIFF` chunks. `tools/blast.py` is a port of
-Mark Adler's blast.c and decompresses them; `Assets.py` is the apworld-side
-copy used to pull the message sound from the player's own install.
+Mark Adler's blast.c and decompresses them, which is how the object database
+below is read. Nothing is unpacked at runtime: the apworld ships the generated
+tables instead.
 
 ### db\dbobjects.dat - the object database
 
@@ -436,8 +437,135 @@ definition +0x0C -> UWideString "Land Garrison"   (behaviour, not identity)
 Verified live: six `Citizen`, two `b  Settlement`, one
 `b  Guard Tower - Paleo` - matching what was actually on the map.
 
+### Two traps in the epoch data
+
+Both were found by generation hanging rather than by reading the tables, and
+both make a family or object look available far earlier than it is.
+
+**Family ids are shared with things that are not units.** `Hurricane` and
+`Torpedo` sit in the Ship family and `Anti Matter Storm` in Helicopter, all at
+epoch 0 with 9999 hitpoints - they are weapon effects. Taking a family's floor
+as the minimum over its members therefore claimed helicopters were recruitable
+in the Prehistoric Age. No real unit is at epoch 0 (the earliest is the Citizen
+at 1), so epoch-0 members are ignored.
+
+**`x `-prefixed entries are scenario props, not units.** `x Dragon ME` is in the
+Helicopter family at epoch 1 and dragged that family's floor from 9 down to 1.
+The same prefix already had to be excluded from wonders, where `x RADAR Wonder`
+shares the wonder category.
+
+**And every match starts you with a Capitol and citizens**, whatever epoch it
+begins in, so `Build Capitol` and `Recruit Citizen` carry no epoch requirement.
+Without that exemption a Prehistoric start has *no* reachable location - nothing
+else can be built until the Stone Age - and the filler spins forever with
+nowhere to put the first epoch unlock. That is what a 300-second generation
+timeout turned out to mean.
+
+### Wonders need the Bronze Age, and the database does not say so
+
+`+0x70` reads **1** for six of the seven wonders, and that is wrong: they cannot
+be built until the **Bronze Age (3)**. Established by playing, in three steps
+that between them rule out the alternatives:
+
+| start | wonders available? |
+|---|---|
+| Copper Age (2) | no |
+| Bronze Age (3), reached by advancing | yes |
+| Middle Ages (5), from the start | **immediately** |
+
+The third case is the one that matters: it rules out "one epoch after you
+started" and pins the rule to a fixed floor.
+
+No per-object field carries it. Searching every record for a field reading 3
+across all six early wonders finds only `+0x68`, the family id, which is 3 for
+"Building" by coincidence. So the requirement lives somewhere else in the engine
+and `tools/gen_objects.py` applies `WONDER_EPOCH_FLOOR = 3` on top of the
+database value. The Time Machine keeps its own higher floor of 14.
+
+This was a live unwinnable-seed bug: a `wonder_victory` seed with a goal epoch
+below Bronze offered wonders that could never be built. Generation now refuses
+it, and `tools/test_generation.py` covers both sides.
+
+**The general lesson:** `+0x70` is right for ordinary buildings and wrong for
+wonders, so it is the game that decides, not the table. Anything derived from it
+wants checking in play before it is trusted.
+
+### Every object has an epoch floor - and logic needs it
+
+`dbobjects` record **`+0x70`** is the earliest epoch an object can be built in.
+It was used for wonders from the start, and *not* for buildings or units, which
+were treated as always available. That was a real logic bug: generation placed
+`Epoch: Bronze Age` on `Build Siege Factory`, and the Siege Factory needs the
+Dark Age - the item was behind a check that could not be reached without it.
+
+Thirteen of the twenty building checks are gated:
+
+```
+epoch 1  Barracks, Town Center, House, Capitol, Settlement
+epoch 2  Dock, Temple, Archery Range
+epoch 3  Farm, Granary, University, Hospital, Stable, Fortress
+epoch 4  Siege Factory
+epoch 10 Navy Yard, Airport, Tank Factory
+epoch 13 Cyber Factory, Cyber Laboratory
+```
+
+A unit family's floor is the earliest epoch any of its members appears in.
+
+Both are now generated into `Objects.py` and applied twice: a check is left out
+of a seed whose goal epoch cannot reach it, and one that is included requires
+the epoch unlocks that get there. `tools/test_generation.py` asserts no spoiler
+ever places an epoch item on a check that needs it.
+
+Note the fandom wiki puts Siege Factory in the Bronze Age while the database
+says Dark. **The database wins** - it is what the engine enforces - and being
+stricter can only make logic safer, never unwinnable.
+
+### Finished, or still a building site
+
+A building enters the roster the moment its **foundation is placed**, not when
+it is finished. That is harmless for a "you built one of these" check but wrong
+for the wonder goal, which would otherwise complete as the last wonder *starts*.
+
+**unit + 0x34C** is 0 while an object is a construction site and 1 once it
+stands. Found by diffing an unfinished wonder against buildings known to be
+complete, which left two boolean candidates:
+
+| offset | citizens | finished buildings | unfinished wonder |
+|---|---|---|---|
+| `+0x038` | 0 | 1 | 0 |
+| `+0x34C` | 1 | 1 | 0 |
+
+`+0x038` is 0 for units too, so it marks "counts as a building" rather than
+completion. `+0x34C` is 1 for everything finished — buildings, citizens, even
+path points — and 0 only for the site. Confirmed by watching a Settlement: it
+read 0 for the ten seconds it took to build, then flipped to 1
+(`tools/watch_wonders.py`, `tools/wonder_state.py`).
+
 Matching on the **name** rather than a numeric id is deliberate: it lines up
 with the generated `Objects.py` tables directly, with no index translation.
+
+### Useful fields in a dbobjects record
+
+| offset | meaning |
+|---|---|
+| `+0x00` | internal name, NUL-terminated |
+| `+0x68` | family index into `dbfamily.dat` |
+| `+0x6C` | category — 8 ordinary building, 10 tower/wall, 28 wonder |
+| `+0x70` | earliest epoch the object can be built in |
+| `+0x74` | the object's own index |
+
+`+0x70` was confirmed against buildings of known epoch: Barracks 1, Archery
+Range 2, Stable 3, Airport 10, Cyber Factory 13. There is **no** matching
+"last epoch" field — Guard Tower - Paleo and friends stop being buildable
+because a later variant supersedes them by name, which is why the curated
+building list excludes them by name marker rather than by data.
+
+The seven wonders are the records whose name starts with `w ` **and** whose
+category is 28. Category alone is not enough: `x RADAR Wonder` and
+`x Lighthouse` share it, but the `x ` prefix marks scenario props (alongside
+`x Eiffel Tower`, `x Buckingham Palace`, `x Greek Ruins`) rather than anything
+a skirmish can build. Six wonders are available from epoch 1; the Time Machine
+needs epoch 14.
 
 ### What this is not
 
@@ -452,6 +580,738 @@ retried:
   indexed by object id.
 - The `EEDbObject` instances found by vtable scan are a 10-entry sub-block with
   nothing pointing into them; they are not the definition table.
+
+## Skirmish setup settings
+
+Every dropdown on the skirmish setup screen is a plain `int32` in `.data`, and
+the checkboxes are single bytes. No pointer chain, no per-match allocation — the
+screen edits these directly, so writing one is exactly equivalent to picking it.
+
+| address | setting | encoding |
+|---|---|---|
+| `0x00931630` | Game Speed | 0 Slow, 1 Standard, 2 Fast, 3 Very Fast |
+| `0x00931638` | Map Size | 0 Tiny … 5 Gigantic |
+| `0x0093163C` | Starting Epoch | 0 Prehistoric … 14 Space |
+| `0x00931640` | Ending Epoch | 0 … 14 |
+| `0x00931644` | Game Variant | **1 Tournament, 2 Standard** |
+| `0x00931648` | Resources | 0 Tournament-Low … 4 Deathmatch |
+| `0x0093164C` | Game Unit Limit | literal, 50–1200 step 50 |
+| `0x00931650` | Wonders For Victory | literal, 0–6 |
+| `0x00931654` | Difficulty | 0 Easy, 1 Medium, 2 Hard |
+| `0x0093165D` | Lock Teams | 0 or 1 |
+| `0x0093165E` | Lock Speed | 0 or 1 |
+| `0x0093165F` | Reveal Map | 0 or 1 |
+| `0x00931660` | Cheat Codes | 0 or 1 |
+| `0x00931662` | Use Custom Civs | 0 or 1 |
+
+The checkbox bytes are **not** in screen order, **not contiguous**, and the run
+they sit in is not five checkboxes: `0x0093165C` reacts to nothing on the setup
+screen and `0x00931661` sits between Cheat Codes and Use Custom Civs. Assuming
+top-to-bottom order got all five wrong and would have written Reveal Map into a
+byte that is not a checkbox at all. Each was pinned down by toggling that box
+alone and watching which byte moved (`tools/watch_checkboxes.py`).
+
+Game Unit Limit was the way in: it is the only setting whose on-screen value is
+also its stored value, so a plain value scan found it, and everything else in
+the block sat within 0x30 bytes of it. The rest were read off by setting each
+dropdown to a distinct value and diffing the block (`tools/watch_settings.py`).
+
+Game Variant is the only field that is not 0-based, and it was originally
+misread as Map Type: a test that changed three settings at once made the wrong
+attribution look convincing. A two-toggle test settled it. Anything inferred
+from a single sample here should be re-tested by toggling that one control.
+
+**Map Type is not in this block and is not enforced.** `0x0093160C` tracks it
+but is derived rather than the selector — Large Islands and Planets Earth both
+settle at 13, Planets Mars and Planets Small both at 18 — so writing it would
+not select a map. The real value lives in the registry as a *string*
+(`Map Type = "Tournament Islands"`), which is why no numeric selector was ever
+found.
+
+It stays unenforced **by choice**, not because the registry route is
+impossible: forcing a map would lock every seed to the maps that ship with the
+game and break custom maps for no benefit.
+
+## Stopping the game ending the run
+
+A skirmish can end three ways that have nothing to do with the seed's goal: you
+wipe the AI out, the AI wipes you out, or a wonder victory fires. All three cut
+a run short.
+
+**`0x0093165C` is "Victory Allowed"**, and holding it at 0 stops all of them.
+
+It is the byte in the checkbox run that no setup-screen checkbox ever moved,
+because it is not on that screen: it is a registry-backed game option under
+`HKCU\Software\Mad Doc Software\EE-AOC\Game Options`, read at startup with a
+default of 1. (The key is absent on a fresh install, so the default is what
+runs.)
+
+Found by disassembly rather than scanning. The options loader at `0x00535780`
+reads a run of booleans into consecutive bytes of one object, and the offsets it
+uses resolve against a single base:
+
+| offset | setting | address | base |
+|---|---|---|---|
+| `+0x404` | Victory Allowed | `0x0093165C` | `0x00931258` |
+| `+0x405` | Lock Teams | `0x0093165D` | `0x00931258` |
+| `+0x406` | Lock Speed | `0x0093165E` | `0x00931258` |
+| `+0x408` | Cheat Codes | `0x00931660` | `0x00931258` |
+
+Lock Teams, Lock Speed and Cheat Codes were already known from toggling them one
+at a time, so three independent agreements on base `0x00931258` pin Victory
+Allowed at `+0x404` without needing a fourth experiment.
+
+**Confirmed empirically.** Wonders For Victory set to 1, Victory Allowed held at
+0, one wonder built to completion: no victory screen, the match kept running.
+That is the exact condition that normally ends a game instantly.
+
+The game writes this byte itself (`0x005DCE1A`, `0x006970C7`) and compares it
+for network sync (`0x005DB65C`), so it has to be held on every poll rather than
+set once - which is what the client's settings enforcement already does.
+
+### Holding the opponent at peace
+
+The two dead ends below both tried to remove the opponent before the match
+started, which is exactly where the game checks. Stance is per-player state
+*inside* the match, so it can be set afterwards, when there is nothing left to
+validate.
+
+**`player + 0x09DC + slot*4`** is the stance toward that player slot:
+`0` allied, `1` hostile.
+
+Found by snapshotting the player objects, allying with the AI through the
+diplomacy screen, and diffing (`tools/diplo_diff.py`): exactly one dword moved.
+Guessing was hopeless first - the player object opens with the roster array at
+`+0x40`, whose unit counts look just like team ids.
+
+The encoding is pinned by every player reading `0` toward itself:
+
+```
+          ->gaia  ->you  ->ai
+  gaia        0      1      1
+  you         1      0      0     <- after allying from the diplomacy screen
+  ai          1      1      0     <- still hostile toward you
+```
+
+Stance is **one-directional**. Allying from your side stops you attacking the
+AI; it does nothing about the AI attacking you, so peace has to be written both
+ways. Verified live: writing `0` into the AI's entry for the local player held.
+
+Slot 0 is neutral nature and is left alone deliberately - making the animals
+friendly would change how the map plays.
+
+### Erasing a civilisation: not reachable by writing memory
+
+Tried, because an opponent that does not exist beats one held at peace. It does
+not work, and the reasons are worth keeping.
+
+**Hitpoints are at `unit + 0x3C` (current) and `unit + 0x2A0` (max).** Both were
+found by taking the database's max-HP field (`dbobjects` record `+0x78`) and
+looking for that value inside a live object; they were told apart by the AI's
+own construction sites, which ramp current HP toward a constant max
+(1231 -> 941 -> 461 -> 171 -> 1 against 1450).
+
+**Writing hitpoints does not kill anything.** A Spearman set to 0 stayed in the
+roster at 0 hp indefinitely; set to -100 it stayed at -100. Empire Earth
+evaluates death only inside its damage handling - there is no per-tick health
+check - so no value that can be written triggers a death.
+
+**Eliminating a player does not destroy their units either.** Resigning left
+all six objects in the roster. So even with the elimination flag, setting it on
+the AI would leave fifty units and buildings standing on the map, inert: worse
+than simply leaving the opponent hostile.
+
+That leaves calling the engine's own kill path per object, which means injecting
+a remote thread - the first code execution in the project, and a good way to
+leave dangling references in the world grid. Not attempted.
+
+### The vtable swap does not work either (and how it fooled me)
+
+`EEComputerPlayer` (vtable `0x0083A57C`) and `EEHumanPlayer` (`0x0083C330`) are
+siblings; diffing the vtables shows the differing entries all pointing into
+`0x0042D000-0x0043F000`, which really is the AI's own code. Pointing a computer
+player's object at the human vtable is safe - the game runs happily for as long
+as you like - but **it does not stop the AI**. Confirmed on a fresh match: with
+the swap verified in place, the opponent went from 6 to 76 objects.
+
+It was briefly believed to work, and the mistake is worth recording. The first
+observation was a four-minute soak in which the AI's object count sat frozen at
+128. That was a **Tiny map on which the AI had already saturated the available
+space** - it had stopped building for its own reasons, and the swap had nothing
+to do with it. No unswapped baseline was measured over the same window, so a
+natural plateau was read as a result.
+
+Lesson, and it is the same one as the Game Variant misattribution: *a value that
+stops changing is not evidence that you stopped it.* Measure the control.
+
+So the AI's decision-making is not dispatched through the player object at all.
+It must live in the `EECP*` subsystem (`EECPIntelligencePlayerFile`,
+`EECPPlayerInteractionManager`), which holds its own references and would have
+to be found separately.
+
+### Making the game declare *your* win does not work either
+
+The obvious way to have a completed seed also win the match: mark the opponents
+defeated, mark yourself victorious, then release the victory gate. Tried, and it
+does the opposite - **you end up defeated**.
+
+```
+14:02:40,779  wrote: player 2 defeated, you victorious, gate released
+14:02:41,294  the game had rewritten you to defeated
+```
+
+Half a second after the gate opened, the engine had re-evaluated the whole thing
+and marked *both* players defeated. That is the same lesson as everywhere else
+here: `+0x0A28` is a record the engine owns, and it only stays written while the
+engine is not looking. Releasing the gate is precisely what makes it look.
+
+There is also no victory condition left to satisfy honestly. Conquest needs the
+opponent eliminated, which cannot be done; wonders are the only other route, and
+they only exist in a wonder-goal seed. So for a `reach_epoch` seed there is
+nothing to trigger.
+
+The client therefore does not touch the outcome on goal completion. Finishing a
+seed leaves the match running, and the player quits when they are ready.
+
+### Two more ways of stopping a computer player that do not work
+
+**Writing the outcome field does not eliminate anyone.** Setting an AI's
+`+0x0A28` to 2 (defeated) holds - the engine does not overwrite it - but the AI
+carries on completely unaffected: 10 objects to 31 in 44 seconds, units moving
+throughout. The field *records* an outcome that the elimination path sets; it
+does not *cause* one.
+
+**Starving a computer player does not work either.** Holding all five of an AI's
+resource slots at 0 for a minute did nothing: 54 objects to 85. Computer players
+do not spend from the array at `+0xAFC` that drives the human economy, so it can
+be emptied without slowing them at all. (The same array is definitely real for
+the human player - granting resources through it updates the HUD.)
+
+Together with hitpoints not killing and elimination not destroying units, that
+is every data-level lever tried against a computer player. Anything further has
+to reach the AI subsystem itself - the `EECP*` classes
+(`EECPIntelligencePlayerFile`, `EECPPlayerInteractionManager`) - rather than the
+player object.
+
+### How a match outcome is recorded
+
+**`player + 0x0A28`**: 0 undecided, 1 victorious, 2 defeated. Observed by
+resigning: the resigning player went 0 -> 2 at the moment the game announced the
+opponent victorious, and that opponent read 1.
+
+This matters for a real defect rather than curiosity. Holding `Victory Allowed`
+off stops the match **tearing down**, not the defeat itself, so a defeated
+player is left unable to act in a match that never ends, with their units still
+in the roster - a state nothing else the client watches would detect. The client
+reads this field so it can say the seed is intact and the player should quit to
+the menu.
+
+### Two dead ends, so nobody retries them
+
+Both were attempts to remove the opponent instead of suppressing victory, and
+both are hard-blocked by the Start Game validator at `0x005DA876`:
+
+- **Solo.** The player-slot array at `0x0093125C` (stride `0x38`, 16 slots,
+  self-describing index at `+0x20`, type at `+0x00`: 1 human, 0 computer,
+  4 closed) can be edited freely, and the UI honours it - but Start Game then
+  refuses with *"You can't play a game with only one player."* The UI can close
+  every slot on its own anyway, so the array was never the obstacle.
+- **Allying the only AI.** Also refused: *"All players can't be on the same
+  team!"*
+
+The validator cannot simply be stubbed to return true: it also loads the map and
+scenario (it reads `0x931634` and `0x931608` and calls into the map loader), so
+skipping it skips real setup work. Suppressing victory is both simpler and
+strictly a data write.
+
+## The `--GAME--` banner: found
+
+The in-game message line (`--GAME-- Player 'Babylon - (Computer)' is
+victorious!`) is produced by two functions, both callable.
+
+Finding it needed one indirection: the text lives in `Language.dll` as
+**STRINGTABLE resources**, loaded by numeric id, so searching the exe for the
+string or for xrefs to its address finds nothing. Resolve the ids first, then
+scan `.text` for `push imm32` of those ids.
+
+| id | string |
+|---|---|
+| 31813 `0x7C45` | `--GAME--` |
+| 31814 `0x7C46` | `Player '%s' has been defeated!` |
+| 31815 `0x7C47` | `Player '%s' is victorious!` |
+| 31808 `0x7C40` | `Player %s has resigned from the game` |
+| 30401 `0x76C1` | `You are Victorious!` |
+
+### The banner itself - `0x006794C6`
+
+`__thiscall` on the **`EEUserInterface` singleton at `[0x009318F8]`**:
+
+```
+ecx  = [0x009318F8]
+arg1 = float[3]      RGB; the caller passes 1.0, 1.0, 1.0 (white)
+arg2 = UString*      prefix - the caller loads string 31813, "--GAME--"
+arg3 = UString*      the message body
+arg4 = int           colour index, from [[0x0092FCA8]+0x2CC] << 1
+arg5 = 0
+```
+
+This is the target for putting the Archipelago log in the game. Strings are
+built with `UWideString` from **Low-Level Engine.dll** (`??0UWideString@@QAE@PBD@Z`,
+RVA `0x83BB7`), which despite the name takes a plain ASCII `char*` - see the
+chat section.
+
+### The outcome announcer - `0x0056AF5C`
+
+`__thiscall` on a **player object**, one stack arg: `1` victorious, `2`
+defeated.
+
+```
+0x0056AF93  cmp ebx, 1                 ; arg
+0x0056AF98  cmp [esi+0xa28], ebx       ; already this outcome? -> return
+0x0056AFA8  push 0x7c47                ; pick the string
+0x0056B05E  call 0x6794c6              ; show the banner
+0x0056B063  mov [esi+0xa28], ebx       ; and only then record the outcome
+```
+
+Note the order: **the outcome field is written last, by this function.** That is
+exactly why writing `+0x0A28` directly never worked - it is the announcer's
+bookkeeping, not a switch. Calling this function instead does the announcement
+*and* the record, the engine's own way.
+
+So a completed seed could plausibly announce a real win by calling
+`0x0056AF5C(player, 1)`. Whether the match then *ends* is a separate question -
+that still depends on the victory gate and the conditions behind it.
+
+### Confirmed working, from an injected thread
+
+`tools/inject.py` calls it and the banner appears in game:
+`--AP-- Archipelago connected`.
+
+The recipe, all from outside the process:
+
+1. `VirtualAllocEx` an RWX page, write data and a short x86 stub, run it with
+   `CreateRemoteThread`.
+2. Build two `UWideString`s with `??0UWideString@@QAE@PBD@Z` (Low-Level Engine
+   DLL, RVA `0x83BB7`, `__thiscall`, takes a plain `char*`). The DLL relocates,
+   so resolve its base at runtime.
+3. `ecx = [0x009318F8]`, push `(rgb, prefix, text, colour, 0)`, call
+   `0x006794C6`. Callee cleans - `ret 0x14`.
+
+`arg4` is computed exactly as the game does it, `[[0x0092FCA8]+0x2CC] << 1`
+(observed 6500 -> 13000). It works copied verbatim; its meaning is still
+unknown, and it is not obviously a colour.
+
+Two things that were *feared* and turned out not to be problems:
+
+- **Thread safety.** The function's first act is `operator new`, and it ends by
+  dispatching into UI state, so calling it from our own thread while the game
+  loop runs looked dangerous. It has been fine across repeated calls.
+- **Cross-bitness injection.** A 64-bit Python creating a remote thread in the
+  32-bit game works.
+
+Both were blamed, at length, for crashes that were actually caused by the
+harness allocating a page and never writing the stub into it - so the thread was
+executing zeros. **Read the stub back out of the target before running it**;
+`inject.py` now does. Disassembling the local copy proves nothing.
+
+## Ending the match: the map, and why a foreign thread is not enough
+
+The full chain, all found from the `--GAME--` string ids:
+
+| address | what it is |
+|---|---|
+| `0x0053C9B4` | `EEWorld::CheckVictory()` - `__thiscall` on the static world object `0x00930D40`, no args, returns 0 if the match is not over. Walks the player table (at world `+0x74`, count at `+0xCC`), skips anyone whose `+0x0A28` is already set, and announces the rest. |
+| `0x00551F3A` | **end the match** - `__thiscall(this, bool won)`, `ret 4`. Sets the game-over flag at `0x00929065`, announces every player victorious or defeated, then does the real end-of-match work. |
+| `0x0056AF5C` | announce one player's outcome; writes `+0x0A28` last |
+| `0x006794C6` | `ShowGameMessage` - draws the banner |
+
+The caller ties them together:
+
+```
+mov ecx, 0x930d40
+call 0x53c9b4              ; evaluate
+test eax, eax / je ...     ; 0 -> nothing to do
+mov [[0x931864]+0x200], eax ; record the result
+cmp ecx, 1 / sete al
+call 0x551f3a              ; end it, won/lost
+```
+
+`this` for `0x00551F3A` is dereferenced **once**, at the very end
+(`mov byte [this+0xE6], 1`), so any writable address satisfies it - the rest
+runs off globals.
+
+**Calling it from an injected thread crashes the game.** The game-over flag does
+get set, so execution reaches `0x00551F65`, and then it faults in what follows:
+`player_table[local]`, string formatting through an imported helper, a virtual
+call on `EEServer` at `[0x9319C8]`, and a screen transition.
+
+That is the difference between this and the banner. `ShowGameMessage` allocates
+one object and queues it - self-contained, and it survives being called from our
+own thread. Ending the match mutates game-wide state and drives the UI, and it
+does not.
+
+**The fix is a hook, not a better call.** `0x00553082` - the function that calls
+`CheckVictory` - looks to run every frame, and is `__thiscall`, so hooking its
+entry gives both the game's own thread *and* the real `this` in `ecx`. A
+one-shot detour there (restore the original bytes, call `0x00551F3A(ecx, 1)`,
+jump to the original) is the shape that should work.
+
+### Still to determine
+
+- What `arg4` and `arg5` actually mean.
+- The two `UWideString`s we construct are never destructed, so each message
+  leaks its small buffer. `??1UWideString@@QAE@XZ` should be called after.
+
+## Next: the `--GAME--` banner, and why injection is the unlock
+
+Every failed attempt in this project shares one shape. The client can write the
+engine's data, but cannot make the engine **act**:
+
+| written | outcome |
+|---|---|
+| hitpoints 0 / negative | stored, ignored - death only happens in damage handling |
+| outcome = defeated (on the AI) | stored, ignored - it is a record |
+| outcome = victorious (on us) | stored, then overwritten the moment the engine evaluated |
+| resources = 0 (on the AI) | stored, ignored - computer players do not spend from it |
+| player vtable = human | stored, ignored - AI dispatch is not through the player object |
+
+That single missing capability - running code in-process - blocks the in-game
+win, removing the opponent, and in-game notifications alike. They are one
+problem, not three.
+
+**The `--GAME--` banner is the agreed next target.** It is the in-game message
+line that shows e.g. `--GAME-- Player 'Babylon - (Computer)' is victorious!`,
+and it appears **in single-player**, which contradicts the earlier conclusion in
+the chat section that this display was multiplayer-only. The string is not a
+literal in `EE-AOC.exe` or `Language.dll`, so it is assembled at runtime.
+
+It is the right first target: the smallest useful feature, wanted in its own
+right (the Archipelago log belongs there rather than only in the external
+overlay), and it proves out injection before harder features depend on it.
+
+Approaches, least to most invasive - note the first two leave game files
+untouched:
+
+1. **Remote-thread shellcode.** Allocate in the target, write an x86 stub that
+   calls the game's own functions, `CreateRemoteThread`. Pure Python, no
+   compiler, nothing shipped but source. Risk is thread safety: calling engine
+   functions from a foreign thread while the game loop runs is how an RTS gets
+   corrupted.
+2. **Injected DLL hooking the game loop**, so calls happen on the game's own
+   thread. Correct and robust; costs a C++ toolchain, a compiled binary in the
+   apworld, and near-certain antivirus false positives.
+3. **Patching the exe on disk.** Breaks GOG integrity. Avoid.
+
+### GOG and Steam are the same game
+
+Empire Earth Gold came to Steam on 26 May 2026. It is **not** a new build:
+
+| file | GOG vs Steam |
+|---|---|
+| `EE-AOC.exe` | every PE section byte-identical; only the file is 15,720 bytes larger, appended outside the sections |
+| `Language.dll` | identical |
+| `Low-Level Engine.dll` | identical |
+| `Default.dll` | identical |
+| `data.ssa` (both) | identical |
+
+Same image base, same section layout, no ASLR on either. So **every address,
+string id and generated table here is valid for both**, and the two entries in
+`PROFILES` differ only in the file size they match on. The tree difference is
+store furniture: `steam_appid.txt` and `steam_autocloud.vdf` files on one side,
+`EULA.txt` on the other.
+
+`tools/install.py` locates whichever install is present, so nothing in the
+tooling is tied to a store. Override with `EE_ROOT`.
+
+**One real difference, and it is not in the files.** The Steam release ships an
+AppCompat layer for its own install path:
+
+```
+HKCU\...\AppCompatFlags\Layers
+  ...\Steam\steamapps\common\Empire Earth Gold Edition\...\ee-aoc.exe
+      -> WIN7RTM RUNASADMIN HIGHDPIAWARE
+```
+
+so the Steam game **always runs elevated** and prompts for UAC, while GOG (which
+gets only `HIGHDPIAWARE`) does not. Neither executable has an embedded
+`requestedExecutionLevel`, so this is purely the registry layer.
+
+The consequence for this project is total: a non-elevated client gets
+`ERROR_ACCESS_DENIED` from `OpenProcess` for **every** right, including
+`PROCESS_QUERY_INFORMATION`. Windows will not even report the elevated
+process's executable path or command line. The client detects this and says so,
+rather than repeating "waiting for Empire Earth to start" at a game that is
+plainly running.
+
+### Two installs
+
+`C:\Empire Earth Gold` is a byte-identical copy kept so that a broken patch
+does not mean re-downloading from GOG. **Anything that writes to game files
+targets that copy**, not the GOG install.
+
+This is not a constraint on the client, which may attach to any running
+`EE-AOC.exe`. The RE tools default to the GOG path for *reading*, which is fine
+as the two are identical.
+
+## Locking individual buildings: solved
+
+**`node + 0x06` is the gate.** Clear that byte and the object disappears from
+the build menu; restore it and it comes back. Verified live on Barracks.
+
+It was found by reading the **consumer** rather than by looking for a field that
+correlates. `EETechTreeNode` vtable[1], **`0x005CF686`**, is the availability
+predicate:
+
+```
+cmp byte [esi+6], 0          ; <- the gate. zero -> unavailable
+je  fail
+call [eax+8]                 ; vtable[2] = IsObsolete (0x005CF742):
+                             ;   node+0x18 vs tree+0x538
+test al, al / jne fail
+cmp byte [esi+0x22], al      ; non-zero -> unavailable
+jne fail
+mov ecx, [esi+0xc]           ; the tech tree
+mov eax, [ecx+0x538]         ; current epoch
+cmp [esi+0x14], eax          ; the node's own epoch requirement
+jg  fail
+...                          ; further checks via [esi+8] +0x48 / +0x7C
+push 1 / pop eax             ; available
+```
+
+Two things fall out of that listing:
+
+* the **epoch requirement is separate**, at `+0x14` against the current epoch,
+  so gating a building through `+0x06` leaves the game's own epoch rules intact
+* **`+0x20` is never read**. Three separate theories about that field - bit
+  `0x10000`, bit `0x1`, and `0x1|0x2|0x4` together - all correlated beautifully
+  with availability and all did nothing when written, because nothing consumes
+  it. It is a record, like `+0x0A28` for match outcomes.
+
+### The node array
+
+Scan for vtable **`0x00846150`**; nodes are `0x30` bytes in contiguous
+per-player arrays (3112 in a 3-player match).
+
+```
++0x04  read by the predicate
++0x06  AVAILABILITY - the gate
++0x08  object the predicate reads +0x48 and +0x7C from
++0x0C  the EETechTree
++0x10  EEButtonObject; its +0x04 is a UString icon texture, e.g.
+       'textures\but_barracks.sst' - still the only way found to tell which
+       object a node belongs to
++0x14  epoch requirement, compared against tree+0x538
++0x18  obsolete-after epoch (15 = never)
++0x20  bookkeeping, not consumed
++0x22  read by the predicate; non-zero blocks availability
+```
+
+## Technologies
+
+### Open, next session
+
+Both halves work when driven by hand; the end-to-end run through the client
+found two things still to settle.
+
+1. **The grant never fired through the client.** `Tech: Excommunication` was
+   received and `granted_techs` stayed empty, with no `Applied ...` line.
+   Calling `TechEffects.grant()` directly works, so it is the client path.
+   `sync_tech_effects` wraps its body in a bare `except Exception: return`,
+   which is exactly what hides this - make it log before anything else.
+
+2. **The skip counter read 1 before any research happened.** Starting in a
+   later epoch makes the game auto-research every earlier epoch's
+   technologies, and those may run through the same completion routine - in
+   which case suppression is denying benefits the game means to give away, and
+   the player silently starts weaker. Confirm the cause before choosing a fix:
+   either hold suppression off until the match has finished loading, or
+   suppress only technologies this seed offers as items.
+
+### Per-unit checks: shipped as filler-only
+
+The same join failure that sank the unit epochs also decides the shape of the
+per-unit checks. A unit stops being offered once a later tier replaces it, so a
+check for one can become unsendable - and `node+0x18` would say which, except
+only **43 of 178** units can be tied to a node at all.
+
+So rather than guess, all 147 are marked `LocationProgressType.EXCLUDED`.
+Nothing but filler is ever placed on them, and missing one costs a resource
+bundle instead of the run. A generation test asserts no `Epoch:` or `Unlock:`
+item ever lands on one.
+
+### Unit family epochs: left on the database's word, deliberately
+
+`UNIT_FAMILY_MIN_EPOCH` is very likely an epoch high, the same way the
+buildings were, but `tools/gen_unit_epochs.py` could not produce anything worth
+trusting and is kept only as a record of the attempt.
+
+The join has to go from a database name to a tech tree node, and the only
+handle is the icon. Name alone is not enough - it linked `but_a10_10t` to
+`AA10 - Stinger Soldier`, an aircraft to a foot soldier. Adding the tier number
+(`Cav03 - Horseman` against `but_horseman_03t`) removes those, but only 16 of
+27 families then match at all, and the ones that do match on one or two members
+out of a dozen.
+
+That is the fatal part. A family's floor is its *earliest* member, so a partial
+match overestimates: `Aircraft` came out as Digital Age off a single late-tier
+plane, against the database's Atomic Age. A floor that is too late is worse
+than the wrong-but-uniform number it replaces, so the database value stays.
+
+Two reasons the match is thin: ship and support textures end `_04` rather than
+`_04t`, and the tier in the name often disagrees with the tier in the texture.
+Fixing it properly needs a real name for each node, which nothing in these
+structures carries.
+
+
+`node + 0x04` is set when a technology has been researched. Measured, twice:
+snapshot every node, research exactly one thing, diff. Only that node moved.
+
+`node + 0x21` is what removes a researched technology from its menu. Clearing
+`+0x04` alone does not bring the button back; clearing `+0x21` as well does,
+and the control (a second technology left researched) stayed gone.
+
+`node + 0x22` looks like research state and is not. It is set on the same seven
+entries in every player's tree **and** in the static template tree that belongs
+to nobody, so it marks entries switched off for the game mode.
+
+### Where research completes, and where the effect is applied
+
+`EETechTreeNode` vtable[6], **`0x005CFA53`**, completes a research:
+
+```
+cmp  byte [esi+0x22], 0      ; mode-disabled
+cmp  byte [esi+6], 0         ; available
+mov  byte [esi+4], 1         ; mark researched
+push [ecx+0x534]             ; ecx = [esi+0xC], the tech tree
+push [eax+0x4C]              ; eax = [esi+8]; the technology id
+push [ecx+4]
+push [eax+0x50]              ; which effect set to apply
+call 0x005CA76C              ; apply the effect
+```
+
+`0x005CA76C` is data-driven: it indexes a table at **`0x0095CF80`** (stride
+0x10) by the effect set, and calls `0x005CA7CF` once per entry.
+
+Two things follow, and they are what an "AP grants the benefit" mode needs.
+The flag write and the effect call are *separate statements*, so research can
+be made to send a check and do nothing else. And at the call site
+`0x005CFAAF`, `ecx` still holds the node's tech tree - loaded three
+instructions earlier and never clobbered - so a detour can suppress only the
+local player's effects and leave the AI's research working.
+
+### Both halves verified
+
+**Suppression.** Patch the `call` at `0x005CFAAF` to a stub that compares `ecx`
+against the local tech tree and skips when it matches. The stub counts its own
+skips, because a withheld technology is otherwise invisible from outside -
+there is no way to tell a working hook from one silently doing nothing. One
+research produced exactly one skip, the AI's research passed through, and the
+game stayed up.
+
+**Granting.** Call `0x005CA76C` on an injected thread with the five arguments
+rebuilt from the node: `[node+8]+0x50`, `[tree+4]`, `[node+8]+0x4C`,
+`[tree+0x534]`, 0. Unlike the end-of-match routine, this one survives being
+called from outside - it walks a static table and adjusts player state.
+
+Proving it took a technology with a *visible discrete* effect. Sanitation is
++5 population capacity: three grants moved the cap 150 -> 165. Diffing the
+player object showed nothing, so the effects do not land in its first 0xB10
+bytes; the HUD is what settled it.
+
+`[tree+0x534]` is the player object, and `[player+0x45C]` is the player's slot
+index - which is what the applier passes down as `ebx`, not a pointer.
+
+**Granting is cumulative, not idempotent.** Three calls gave three bonuses. So
+the client persists which technologies it has granted, keyed by the match's
+tech tree: a reconnect mid-match must not reapply them, while a new match must,
+because the game starts it with none.
+
+This was found statically, from the vtable, after the hardware breakpoint
+approach crashed the game at the exact moment the write happened.
+`tools/hwbp.py` reports the write but does not survive it here; its own help
+calls `--all-threads` riskier, and that is what it cost. Reading the vtable was
+both safer and faster.
+
+### The engine writes `+0x06` too
+
+It is not a static flag to take a copy of. The engine holds a building at 0
+until you reach the epoch it belongs to, and sets it when you get there - so a
+node found at 0 is the game's to manage, not ours.
+
+That matters for how the gate releases a building, and it took two attempts.
+
+Caching the value found at scan time and restoring it on unlock pins the
+building shut for the whole match: `Unlock: Siege Factory` received in the
+Copper Age caches a 0, and writing that back every poll keeps the factory
+hidden long after the Dark Age makes it legal.
+
+Recording which nodes the client closed, and reopening only those, is wrong in
+a quieter way - it works until the client restarts, and then the record is
+empty while the nodes are still shut, so an unlock arrives to no effect.
+
+What works is asking the node. Below the current epoch the game would have the
+flag set, so a 0 there is the client's doing and can be cleared; at or above it
+the 0 is the game's and must be left alone. No state, and a client that
+reconnects mid-match behaves the same as one that was there all along.
+
+Nothing is lost by reopening. A released node is filtered by the same predicate
+as everything else, so the epoch test at `+0x14` still hides it until its time.
+
+### Picking the local player's nodes
+
+Every player has a full copy of the tree - 778 nodes each in a 3-player match,
+plus a static template at `0x0092FD98`. `node + 0x0C` is the owning
+`EETechTree`, and `EpochAccess.tech_tree()` already resolves the local player's,
+so filtering on it isolates exactly the human's 778 nodes.
+
+### Name to node
+
+The button's icon texture is the only handle. Fourteen of the twenty buildings
+match `but_<name>.sst` directly; the other six need aliases:
+
+```
+Archery Range     but_archery.sst          Navy Yard      but_naval yard.sst
+Cyber Factory     but_mech factory.sst     Siege Factory  but_siege workshop.sst
+Cyber Laboratory  but_mech laboratory.sst  Farm           but_farm_15t
+```
+
+`Granary` and `University` have **two** nodes each, so gating has to write every
+node for a building rather than the first one found - University's second node
+is an epoch 12 variant, and leaving it open would be a way round the lock.
+
+An icon is not enough on its own to be sure a node is the right one. `Farm`
+matched `but_farm_15t`, an epoch 14 variant, and there is **no node for the
+ordinary Farm at any epoch below that** - so the item was bound to something
+that never appears and the Farm was never gated at all. The client now checks
+that at least one of a building's nodes unlocks in the epoch the database
+expects (`node+0x14` runs exactly one below the database epoch, consistently
+across every building) and drops the building when none does. Farm is excluded
+for that reason; 18 of the 20 are gated.
+
+### Which building produces which unit
+
+`Recruit <family>` checks depend on this: a seed that hides `Unlock: Stable`
+behind `Recruit Lancer` is unwinnable, the same shape of bug as
+`Epoch: Bronze Age` on `Build Siege Factory`.
+
+It is **not** in dbobjects.dat. Building records carry no train list and unit
+records carry no producer; every apparent reference is a small integer colliding
+with a building index, which is what a search for one finds.
+
+It is in `technology_tree.pdf`, shipped with the game, whose second page lists
+every unit in eleven tables headed by the category that produces it.
+`tools/gen_producers.py` reads those tables and writes `Producers.py`.
+
+Page 1 of that PDF is the flow chart, and it is a trap: its rows are per
+producer but uneven and unmarked - no separator rules or row boxes exist in the
+vector layer - so every rule for inferring a row boundary (last heading above,
+midpoint between heading tops, midpoint between row centres) misfiled the units
+nearest the edges. Spitfire came out of a Siege Factory and a Priest out of a
+Town Center. The tables need no geometry at all.
+
+One derived fact worth keeping: the `Siege` family floors at epoch 2 not because
+the floor was polluted, but because `Sampson` is a genuine Barracks infantry
+unit in that family. Its producers are `Barracks` **or** `Siege Factory`.
 
 ## Gotchas hit along the way
 
