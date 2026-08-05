@@ -442,13 +442,6 @@ Verified live: six `Citizen`, two `b  Settlement`, one
 Both were found by generation hanging rather than by reading the tables, and
 both make a family or object look available far earlier than it is.
 
-**Family ids are shared with things that are not units.** `Hurricane` and
-`Torpedo` sit in the Ship family and `Anti Matter Storm` in Helicopter, all at
-epoch 0 with 9999 hitpoints - they are weapon effects. Taking a family's floor
-as the minimum over its members therefore claimed helicopters were recruitable
-in the Prehistoric Age. No real unit is at epoch 0 (the earliest is the Citizen
-at 1), so epoch-0 members are ignored.
-
 **`x `-prefixed entries are scenario props, not units.** `x Dragon ME` is in the
 Helicopter family at epoch 1 and dragged that family's floor from 9 down to 1.
 The same prefix already had to be excluded from wonders, where `x RADAR Wonder`

@@ -172,15 +172,6 @@ def build(ssa: str):
         mine = [n for _i, n, f in recs if f == idx and not n.startswith("b ")]
         if not mine:
             continue
-        # A family is available as soon as its earliest real member is.
-        # Epoch 0 members are not units: `Hurricane`, `Torpedo` and
-        # `Anti Matter Storm` share family ids with Ships and Helicopters and
-        # would otherwise claim those families are recruitable in the
-        # Prehistoric Age. No actual unit sits at epoch 0 - the earliest is the
-        # Citizen at 1 - so ignoring them is safe.
-        # `x `-prefixed entries are scenario props, not recruitable units -
-        # `x Dragon ME` sits in the Helicopter family at epoch 1 and would
-        # claim helicopters are available in the Stone Age.
         real = [
             min_epoch.get(n, 0) for n in mine
             if min_epoch.get(n, 0) > 0 and not n.startswith("x ")

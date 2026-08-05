@@ -114,7 +114,7 @@ class TechnologyChecks(DefaultOnToggle):
     display_name = "Technology Checks"
 
 
-class BuildingUnlocks(Toggle):
+class BuildingUnlocks(DefaultOnToggle):
     """
     Put most building types behind Archipelago items.
 

@@ -190,12 +190,11 @@ class EpochAccess:
     def apply(self, unlocked: set[int]) -> tuple[int, int]:
         """Lock every future epoch not yet unlocked. Returns (locked, opened).
 
-        Only the unbroken run of unlocked epochs above the current one is
-        opened. Empire Earth offers the nearest available epoch, so opening one
-        further up while a nearer one is still locked lets the player skip
-        straight past it: holding `Epoch: Dark Age` without `Epoch: Bronze Age`
-        put a Dark Age button on a Copper Age capitol, and the Bronze Age check
-        could then never be sent.
+        Open only the *next* epoch, even if the player already holds items for
+        later ones. Empire Earth may offer a later available epoch directly;
+        opening Copper and Bronze together at Stone Age therefore permits a
+        Stone -> Bronze skip. Later items stay recorded in `unlocked`, but are
+        not applied until the player has actually entered the preceding epoch.
 
         Epochs already entered are left alone - retracting an epoch you are
         standing in would be nonsense, and the flag there is historical.
@@ -204,11 +203,11 @@ class EpochAccess:
         if reached is None:
             return 0, 0
         n_lock = n_open = 0
-        chain = True
+        next_epoch = reached + 1
         for i in range(reached + 1, NUM_EPOCHS):
-            chain = chain and i in unlocked
-            if self.set_locked(i, not chain):
-                if chain:
+            open_now = i == next_epoch and i in unlocked
+            if self.set_locked(i, not open_now):
+                if open_now:
                     n_open += 1
                 else:
                     n_lock += 1
