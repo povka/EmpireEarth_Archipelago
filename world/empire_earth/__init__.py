@@ -52,7 +52,7 @@ class EmpireEarthWeb(WebWorld):
             "English",
             "setup_en.md",
             "setup/en",
-            ["you"],
+            ["asapaska"],
         )
     ]
 

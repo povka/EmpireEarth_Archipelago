@@ -77,6 +77,19 @@ HEADING_BUILDINGS = {
 }
 
 
+# Families whose members the tables never name, resolved by hand.
+#
+# `Ship Galley` is every galley and galleon from Copper to Royal. The tables
+# list warships by hull name under headings the matcher reads, but these seven
+# appear nowhere in them; the flow chart on page 1 puts them with the rest of
+# the navy. They are warships and come from the same places every other warship
+# does. Written down rather than inferred, because a wrong producer here is the
+# dangerous direction: it would tell logic a check is reachable when it is not.
+FAMILY_FALLBACK = {
+    "Ship Galley": ("Dock", "Navy Yard"),
+}
+
+
 def heading_buildings(heading):
     base = re.sub(r"\s*\(Epochs[^)]*\)", "", heading).strip()
     return HEADING_BUILDINGS.get(base)
@@ -175,6 +188,11 @@ def main():
     print(f"reading {PDF}")
 
     producers, members, unknown, unmatched, ambiguous = derive()
+
+    for family, buildings in FAMILY_FALLBACK.items():
+        if family in UNIT_FAMILIES and family not in producers:
+            producers[family] = set(buildings)
+            members[family] = ["(by hand)"]
 
     for fam in UNIT_FAMILIES:
         blds = producers.get(fam)

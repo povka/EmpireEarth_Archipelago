@@ -1127,40 +1127,74 @@ found two things still to settle.
    either hold suppression off until the match has finished loading, or
    suppress only technologies this seed offers as items.
 
-### Per-unit checks: shipped as filler-only
+### Per-unit checks: real checks, with retirement switched off
 
-The same join failure that sank the unit epochs also decides the shape of the
-per-unit checks. A unit stops being offered once a later tier replaces it, so a
-check for one can become unsendable - and `node+0x18` would say which, except
-only **43 of 178** units can be tied to a node at all.
+These were filler-only for a while. A unit stops being offered once a later
+tier replaces it, so a check for one can become unsendable, and `node+0x18`
+would say which - except only **43 of 178** units can be tied to a node at all.
+Rather than guess, every unit check was marked `LocationProgressType.EXCLUDED`.
 
-So rather than guess, all 147 are marked `LocationProgressType.EXCLUDED`.
-Nothing but filler is ever placed on them, and missing one costs a resource
-bundle instead of the run. A generation test asserts no `Epoch:` or `Unlock:`
-item ever lands on one.
+That is no longer the trade. The engine has two retirement paths and
+`Obsolescence.py` clears both on every node of the local tree - `+0x05`
+(superseded) to zero and `+0x18` (obsolete-after) to 15, meaning never - so
+nothing is ever withdrawn. Verified in a live match: a Rock Thrower survived
+Stone -> Copper -> Bronze, and 0 of 778 nodes were left retirable. The checks
+are ordinary progression checks now.
 
-### Unit family epochs: left on the database's word, deliberately
+Two bugs came out of the first two-player run, and both were about which units
+exist rather than about the memory work:
 
-`UNIT_FAMILY_MIN_EPOCH` is very likely an epoch high, the same way the
-buildings were, but `tools/gen_unit_epochs.py` could not produce anything worth
-trusting and is kept only as a record of the attempt.
+* **`Inf01 - Rock Thrower` sent nothing.** Its family is `Human`, and the
+  generator took units from a hand-written list of 27 families that did not
+  include it - nor `Hero`, `Aircraft Carrier Fighter`, or any of the six `Mech`
+  families. A curated list was right when a check meant "recruit anything in
+  this family"; once each unit had its own check, anything left out simply had
+  no check. `gen_objects.py` now takes every family except a small set that
+  holds no recruitable unit, and the count went 147 -> 218.
+* **`Epoch: Dark Age` was placed behind `Recruit Cataphract`**, which is a Dark
+  Age unit, so the seed could not be finished. Per-unit checks had inherited
+  their *family's* floor, and a family's floor is its earliest member: the
+  Lancer family starts at a Copper Age Horseman.
 
-The join has to go from a database name to a tech tree node, and the only
-handle is the icon. Name alone is not enough - it linked `but_a10_10t` to
-`AA10 - Stinger Soldier`, an aircraft to a foot soldier. Adding the tier number
-(`Cav03 - Horseman` against `but_horseman_03t`) removes those, but only 16 of
-27 families then match at all, and the ones that do match on one or two members
-out of a dozen.
+The lesson the second one repeats: the circular-placement test would have
+caught it, but that test reads `LOCATION_MIN_EPOCH` - the same table that was
+wrong. `tools/test_generation.py` now also checks the floors against
+`data.ssa` directly, which is the only reading a wrong table cannot pass.
 
-That is the fatal part. A family's floor is its *earliest* member, so a partial
-match overestimates: `Aircraft` came out as Digital Age off a single late-tier
-plane, against the database's Atomic Age. A floor that is too late is worse
-than the wrong-but-uniform number it replaces, so the database value stays.
+### Unit epochs: settled by the shipped PDF
 
-Two reasons the match is thin: ship and support textures end `_04` rather than
-`_04t`, and the tier in the name often disagrees with the tier in the texture.
-Fixing it properly needs a real name for each node, which nothing in these
-structures carries.
+`UNIT_MIN_EPOCH` was long suspected of reading an epoch high, the same way the
+buildings did, and `tools/gen_unit_epochs.py` could not settle it. That join
+goes from a database name to a tech tree node with the icon as its only handle:
+name alone linked `but_a10_10t` to `AA10 - Stinger Soldier`, an aircraft to a
+foot soldier, and adding the tier number left only 16 of 27 families matching,
+most on one or two members out of a dozen. Since a family's floor is its
+earliest member, a partial match *overestimates* - `Aircraft` came out Digital
+Age off a single late-tier plane - so the database value stayed.
+
+`technology_tree.pdf` settles it without the join. Page 2 prints an epoch for
+every unit and building in Roman numerals, and for buildings all three sources
+line up at once:
+
+```
+Granary      PDF III      database 3      running game's tech tree 2
+```
+
+Epoch 2 is the Copper Age, which is where the game actually offers a Granary.
+So the PDF and the database share a numbering that starts at I for the
+Prehistoric Age, and it is one above the tree's. The same comparison across
+units: the database agrees with the PDF on **410 of the 417** rows that name
+exactly one unit, and reads one *high* on the other seven (`Field Medic -
+Imperial` is printed VIII and stored 9) - never one low.
+
+So the correction is `max(raw - 1, 0)`, and its error can only ever be an epoch
+late, which costs a check but cannot make a seed unwinnable. This is what made
+a Cataphract a Dark Age unit rather than a Middle Ages one, and a Citizen a
+Prehistoric one rather than a Stone Age one.
+
+A recruit floor is `max(unit epoch, earliest producer's epoch)`. The producer
+half is not redundant: a Rock Thrower is a Prehistoric unit, so its own epoch
+requires nothing, and what actually gates it is having a Barracks.
 
 
 `node + 0x04` is set when a technology has been researched. Measured, twice:

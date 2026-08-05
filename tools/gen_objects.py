@@ -73,15 +73,41 @@ BUILDING_EXCLUDE_MARKERS = (
     "aa10", "aa13", "steel mill",
 )
 
-# Unit families that are recruitable and meaningful as checks.
-UNIT_FAMILIES = [
-    "Citizen", "Human Sword", "Human Spear", "Human Archer", "Human Musket",
-    "Human Machine Gun", "Spear Thrower", "Mounted Archer", "Mounted Spear",
-    "Lancer", "Curiassier", "Siege", "Ram", "Machines",
-    "Medieval Field Weapon", "Tank", "Tank - Strong", "Anti Tank", "Land AA",
-    "Aircraft", "Bomber", "Atomic Bomber", "Helicopter", "Ship", "Battleship",
-    "Submarine", "Priest",
-]
+# Families that hold no recruitable unit. Everything else in the database's
+# family table is taken, rather than a hand-picked list.
+#
+# A curated list was right when a check meant "recruit anything in this
+# family". Now that every unit has its own check, anything left out simply has
+# no check at all - which is how `Inf01 - Rock Thrower` came to be unsendable:
+# its family is `Human`, and `Human` was not on the list. Nor were `Hero`,
+# `Aircraft Carrier Fighter`, or any of the six `Mech` families.
+NON_UNIT_FAMILIES = {
+    "No Family", "Resource", "Building", "Animal", "Fish", "Mines",
+    "Ambient", "Towers", "Walls",
+}
+
+
+def unit_epoch(raw: int) -> int:
+    """The database's epoch field, as an index into EPOCH_NAMES.
+
+    The field counts from 1 at the Prehistoric Age; the rest of this project
+    counts from 0. The off-by-one is measured, not assumed. `technology_tree.pdf`
+    prints an epoch for every unit and building in Roman numerals, and for
+    buildings all three sources can be lined up at once:
+
+        Granary   PDF III   database 3   running game's tech tree 2 (Copper Age)
+
+    which is the epoch the game actually offers a Granary in. So the PDF and the
+    database share a numbering, and it is one above the tree's. For units the
+    database agrees with the PDF for 410 of the 417 rows that name exactly one
+    unit, and reads one *high* for the other seven (`Field Medic - Imperial` is
+    printed VIII and stored 9) - never one low, so subtracting one can only ever
+    over-state an epoch, which costs a check but cannot make a seed unwinnable.
+
+    Leaving the +1 in place is what made `Recruit Cataphract` a Middle Ages
+    check when a Cataphract is a Dark Age unit.
+    """
+    return max(raw - 1, 0)
 
 
 def pretty(name: str) -> str:
@@ -138,17 +164,13 @@ def build(ssa: str):
             continue
         buildings.append((i, n, pretty(n), min_epoch.get(n, 0)))
 
-    fam_index = {name: idx for idx, name in enumerate(fam)}
     unit_families = []
     members: list[tuple[str, str]] = []
-    for name in UNIT_FAMILIES:
-        idx = fam_index.get(name)
-        if idx is None:
-            print(f"  warning: family {name!r} not in this build, skipped")
+    for idx, name in enumerate(fam):
+        if name in NON_UNIT_FAMILIES:
             continue
         mine = [n for _i, n, f in recs if f == idx and not n.startswith("b ")]
         if not mine:
-            print(f"  warning: family {name!r} has no unit members, skipped")
             continue
         # A family is available as soon as its earliest real member is.
         # Epoch 0 members are not units: `Hurricane`, `Torpedo` and
@@ -163,9 +185,9 @@ def build(ssa: str):
             min_epoch.get(n, 0) for n in mine
             if min_epoch.get(n, 0) > 0 and not n.startswith("x ")
         ]
-        earliest = min(real) if real else 0
+        earliest = unit_epoch(min(real)) if real else 0
         unit_families.append((idx, name, len(mine), earliest))
-        members += [(n, name) for n in mine]
+        members += [(n, name, unit_epoch(min_epoch.get(n, 0))) for n in mine]
     return buildings, unit_families, members
 
 
@@ -201,10 +223,25 @@ def emit(buildings, unit_families, members, wonder_list) -> str:
     lines += [
         ")",
         "",
+        "# database name of a unit -> the epoch it can first be recruited in.",
+        "#",
+        "# Per unit, not per family. A family's floor is its *earliest* member,",
+        "# which is far too low for a late one: Cataphract is a Middle Ages",
+        "# unit in the Lancer family, whose earliest member is a Copper Age",
+        "# Horseman. Using the family's number let generation hide",
+        "# `Epoch: Dark Age` behind a check that needs the Middle Ages, and the",
+        "# seed could not be finished.",
+        "UNIT_MIN_EPOCH: dict[str, int] = {",
+    ]
+    for raw, _family, epoch in sorted(members):
+        lines.append(f"    {raw!r}: {epoch},")
+    lines += [
+        "}",
+        "",
         "# database name of a unit -> the family it counts towards",
         "UNIT_FAMILY_BY_NAME: dict[str, str] = {",
     ]
-    for raw, fam in members:
+    for raw, fam, _epoch in sorted(members):
         lines.append(f"    {raw!r}: {fam!r},")
     lines += [
         "}",

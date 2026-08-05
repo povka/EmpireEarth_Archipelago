@@ -15,7 +15,7 @@ class BundleSize(Range):
     display_name = "Resource Bundle Size"
     range_start = 50
     range_end = 10000
-    default = 500
+    default = 2500
 
 
 class ApplyInGameWin(DefaultOnToggle):
@@ -235,7 +235,7 @@ class ResourceLevel(Choice):
     option_standard_low = 2
     option_standard_high = 3
     option_deathmatch = 4
-    default = 2
+    default = 3
 
 
 class GameVariant(Choice):

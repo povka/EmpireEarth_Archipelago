@@ -17,7 +17,7 @@ Runs on any platform. The world generates anywhere - `__init__.py` imports the
 client lazily, so nothing platform-specific loads during generation - which is
 what lets a non-Windows machine build this and host a multiworld.
 
-Nothing is packaged until three checks pass, because a world that fails to
+Nothing is packaged until five checks pass, because a world that fails to
 import does not announce itself: Archipelago simply never registers the client
 component, and the launcher silently opens its own window instead. That cost an
 afternoon once.
@@ -25,11 +25,20 @@ afternoon once.
     1. every file compiles
     2. every `from .Module import name` names something that module defines
     3. the data modules import for real, with Archipelago's own modules stubbed
+    4. no two checks, and no two items, share an id
+    5. nothing needs a Python newer than 3.11, the oldest Archipelago supports
 
-Check 3 is the one that earns its keep: it catches a data table changing shape,
-such as adding a field to `TECHNOLOGIES` while another module still unpacks the
-old arity. What none of them catch is a name used inside a function but never
-imported; that only shows up at runtime.
+Check 3 catches a data table changing shape, such as adding a field to
+`TECHNOLOGIES` while another module still unpacks the old arity. Check 4 exists
+because id blocks silently overflow into each other. Check 5 is static only -
+this machine has no 3.11 to run against.
+
+All of them cover the `test` package as well, even though it is deliberately
+left out of the packaged apworld. Checking only what ships is how the tests
+came to import a name that had been deleted, with nothing to say so.
+
+What none of them catch is a name used inside a function but never imported;
+that only shows up at runtime.
 """
 
 from __future__ import annotations
@@ -64,23 +73,94 @@ def sources() -> list[str]:
     return sorted(f for f in os.listdir(SRC) if f.endswith(".py"))
 
 
+def all_sources() -> list[str]:
+    """Every .py in the world, including the test package.
+
+    The tests are not shipped in the apworld, but they are still part of the
+    world and Archipelago expects them to run. Validating only what gets
+    packaged is how `test/__init__.py` came to import a name that had been
+    deleted, with nothing to say so.
+    """
+    out = []
+    for root, dirs, files in os.walk(SRC):
+        dirs[:] = [d for d in dirs if d != "__pycache__"]
+        out += [os.path.join(root, f) for f in files if f.endswith(".py")]
+    return sorted(out)
+
+
+def rel(path: str) -> str:
+    return os.path.relpath(path, SRC).replace(os.sep, "/")
+
+
 def check_compiles() -> list[str]:
     bad = []
-    for name in sources():
-        path = os.path.join(SRC, name)
+    for path in all_sources():
         try:
             compile(open(path, encoding="utf-8").read(), path, "exec")
         except SyntaxError as e:
-            bad.append(f"{name}: {e}")
+            bad.append(f"{rel(path)}: {e}")
+    return bad
+
+
+# Names added to the standard library after 3.11. Archipelago supports 3.11.9
+# up to (not including) 3.14, so anything here builds fine on the interpreter
+# it was written on and fails for someone on the oldest supported one.
+TOO_NEW = {
+    "batched": "itertools.batched is 3.12+",
+    "override": "typing.override is 3.12+",
+    "TypeAliasType": "typing.TypeAliasType is 3.12+",
+    "walk": "pathlib.Path.walk is 3.12+ (os.walk is fine)",
+    "binomialvariate": "random.binomialvariate is 3.12+",
+    "monitoring": "sys.monitoring is 3.12+",
+    "deprecated": "warnings.deprecated is 3.13+",
+    "process_cpu_count": "os.process_cpu_count is 3.13+",
+    "ReadOnly": "typing.ReadOnly is 3.13+",
+}
+
+
+def check_python_311() -> list[str]:
+    """Refuse syntax or stdlib calls that need something newer than 3.11.
+
+    Archipelago runs on 3.11.9 or newer and below 3.14. This machine only has
+    3.14, so the world is never actually executed on the oldest version it
+    claims to support; this is the next best thing. `feature_version` makes the
+    parser reject syntax 3.11 could not read, and the name scan catches the
+    more likely mistake of calling something that simply did not exist yet.
+
+    It is a static check, not a 3.11 run: it cannot see a changed signature or
+    a behavioural difference.
+    """
+    bad = []
+    for path in all_sources():
+        src = open(path, encoding="utf-8").read()
+        try:
+            tree = ast.parse(src, path, feature_version=(3, 11))
+        except SyntaxError as e:
+            bad.append(f"{rel(path)}: not valid Python 3.11 syntax: {e}")
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute) and node.attr in TOO_NEW:
+                bad.append(f"{rel(path)}:{node.lineno}: {TOO_NEW[node.attr]}")
+            elif isinstance(node, ast.ImportFrom) and node.module in (
+                    "itertools", "typing", "warnings", "random", "os", "sys"):
+                bad += [f"{rel(path)}:{node.lineno}: {TOO_NEW[a.name]}"
+                        for a in node.names if a.name in TOO_NEW]
     return bad
 
 
 def check_internal_imports() -> list[str]:
-    """Every `from .Module import name` must name something Module defines."""
+    """Every `from .Module import name` must name something Module defines.
+
+    Covers the test package too, and its `from ..Module import name` form. That
+    is not hypothetical tidiness: the tests imported `CACHE_LOCATIONS` from
+    Locations long after it was deleted, and because the packaged apworld
+    leaves the tests out, every check here passed while the world's own test
+    suite could not be imported at all.
+    """
     trees = {}
-    for name in sources():
-        path = os.path.join(SRC, name)
-        trees[name[:-3]] = ast.parse(open(path, encoding="utf-8").read(), path)
+    for path in all_sources():
+        dotted = rel(path)[:-3].replace("/", ".")
+        trees[dotted] = ast.parse(open(path, encoding="utf-8").read(), path)
 
     def defined(tree: ast.Module) -> set[str]:
         out: set[str] = set()
@@ -108,21 +188,33 @@ def check_internal_imports() -> list[str]:
     have = {mod: defined(tree) for mod, tree in trees.items()}
     bad = []
     for mod, tree in trees.items():
+        # The package this module sits in: "" at the world root, "test" inside
+        # the test package. One dot means that package, two means its parent.
+        package = mod.rpartition(".")[0]
         for node in ast.walk(tree):
-            if (isinstance(node, ast.ImportFrom) and node.level == 1
-                    and node.module in have):
-                bad += [f"{mod}.py: {a.name!r} is not defined in {node.module}.py"
-                        for a in node.names if a.name not in have[node.module]]
+            if not isinstance(node, ast.ImportFrom) or not node.level:
+                continue                      # absolute: Archipelago's own
+            parts = package.split(".") if package else []
+            if node.level - 1 > len(parts):
+                bad.append(f"{mod}.py: relative import goes above the world")
+                continue
+            target = parts[:len(parts) - (node.level - 1)]
+            if node.module:
+                target = target + node.module.split(".")
+            dotted = ".".join(target)
+            if dotted not in have:
+                continue                      # a package, not a module here
+            bad += [f"{mod}.py: {a.name!r} is not defined in {dotted}.py"
+                    for a in node.names if a.name not in have[dotted]]
     return bad
 
 
-def check_data_modules() -> list[str]:
-    """Import the data modules for real, with BaseClasses stubbed.
+def stub_archipelago() -> None:
+    """Make the data modules importable outside Archipelago.
 
-    This is what notices a table that changed shape. Adding a field to
-    `TECHNOLOGIES` while `Locations.py` still unpacked the old arity broke the
-    whole world, and nothing said so until the launcher quietly refused to show
-    the client.
+    They import names from BaseClasses at module level but no data table
+    touches them, so stubs are enough. Every check that imports the world calls
+    this, rather than leaning on another check having run first.
     """
     stub = types.ModuleType("BaseClasses")
 
@@ -140,6 +232,17 @@ def check_data_modules() -> list[str]:
     sys.modules.setdefault("BaseClasses", stub)
     sys.path.insert(0, SRC)
 
+
+def check_data_modules() -> list[str]:
+    """Import the data modules for real, with BaseClasses stubbed.
+
+    This is what notices a table that changed shape. Adding a field to
+    `TECHNOLOGIES` while `Locations.py` still unpacked the old arity broke the
+    whole world, and nothing said so until the launcher quietly refused to show
+    the client.
+    """
+    stub_archipelago()
+
     bad: list[str] = []
     skipped: list[str] = []
     for name in sources():
@@ -155,6 +258,31 @@ def check_data_modules() -> list[str]:
             bad.append(f"{name}: {type(e).__name__}: {e}")
     if skipped:
         print(f"   (skipped {', '.join(skipped)}: needs Windows)")
+    return bad
+
+
+def check_ids() -> list[str]:
+    """No two checks, and no two items, may share an id.
+
+    Ids are handed out in blocks with a base per kind, so a kind that outgrows
+    its block starts issuing ids that already mean something else - and nothing
+    complains, it simply resolves to the wrong check. The technology block held
+    exactly 100 technologies against 100 slots when this was written.
+    """
+    stub_archipelago()
+    bad = []
+    for module, table, what in (("Locations", "LOCATION_NAME_TO_ID", "location"),
+                                ("Items", "ITEM_NAME_TO_ID", "item")):
+        try:
+            ids = getattr(__import__(module), table)
+        except (ImportError, AttributeError) as e:
+            bad.append(f"{module}.{table}: {e}")
+            continue
+        seen: dict[int, str] = {}
+        for name, value in ids.items():
+            if value in seen:
+                bad.append(f"{what} id {value}: {seen[value]!r} and {name!r}")
+            seen[value] = name
     return bad
 
 
@@ -191,13 +319,15 @@ def main():
 
     for label, problems in (("syntax", check_compiles()),
                             ("imports", check_internal_imports()),
-                            ("data modules", check_data_modules())):
+                            ("data modules", check_data_modules()),
+                            ("ids", check_ids()),
+                            ("python 3.11", check_python_311())):
         if problems:
             print(f"{label}:")
             for line in problems:
                 print(f"   {line}")
             raise SystemExit("not built: fix the above first")
-    print(f"checks passed ({len(sources())} modules)")
+    print(f"checks passed ({len(all_sources())} modules, including the test package)")
 
     if args.check:
         return

@@ -22,7 +22,8 @@ import tempfile
 import zipfile
 
 GENERATE = r"C:\ProgramData\Archipelago\ArchipelagoGenerate.exe"
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
 
 GOALS = [
     ("stone_age", 1), ("copper_age", 2), ("bronze_age", 3), ("dark_age", 4),
@@ -132,6 +133,27 @@ def world_modules():
 
         fake.ItemClassification = _Classification
         sys.modules["BaseClasses"] = fake
+
+
+def sync_world() -> str:
+    """Install the working tree into Archipelago before generating anything.
+
+    `ArchipelagoGenerate.exe` loads the apworld from `custom_worlds`, never
+    this checkout, so without this every seed here is built by whatever was
+    installed last while the assertions read the current tables. The two
+    disagreeing looks exactly like a logic bug: after the recruit floors were
+    corrected, a stale install put `Recruit Sagitarian Cruiser` in a Dark Age
+    seed and three tests failed for a bug that had already been fixed.
+    """
+    sys.path.insert(0, HERE)
+    from build_apworld import build
+
+    dest = os.path.join(os.path.dirname(GENERATE), "custom_worlds")
+    if not os.path.isdir(dest):
+        return f"no custom_worlds at {dest}; generating against whatever is installed"
+    target = os.path.join(dest, "empire_earth.apworld")
+    count, size = build(target)
+    return f"installed {count} files ({size:,} bytes) -> {target}"
 
 
 def spoiler_for(yaml_text: str) -> tuple[str | None, str]:
@@ -451,6 +473,83 @@ def run_settings() -> tuple[bool, str]:
     return True, f"{len(SETTINGS_EXPECTED)} settings, 2 epoch checks"
 
 
+def run_data_floors() -> tuple[bool, str]:
+    """Check the recruit checks against the game's database, not the world's.
+
+    Every other test here reads `LOCATION_MIN_EPOCH` and so believes whatever
+    it says. That is exactly how both bugs from the first two-player run got
+    out, and neither was subtle once measured:
+
+      * `Recruit Cataphract` carried epoch 3, the earliest member of the Lancer
+        family, when a Cataphract is a Middle Ages unit. Generation put
+        `Epoch: Dark Age` behind it and the seed could not be finished. The
+        circular-placement test above would have caught it, had the number it
+        compares against not been the wrong one.
+      * `Inf01 - Rock Thrower` had no check at all. Its family is `Human`,
+        which was missing from a hand-written list of families, so recruiting
+        one sent nothing.
+
+    So this reads `data.ssa` directly: every unit in it must have a check, and
+    every check must carry that unit's own epoch. Skipped where the game is not
+    installed, which is the only reason it is here rather than in the world's
+    own test package.
+    """
+    try:
+        from dbobjects import objects, record_name
+        from ssa_extract import DEFAULT_SSA
+    except ImportError as e:
+        return True, f"skipped: {e}"
+    if not os.path.exists(DEFAULT_SSA):
+        return True, "skipped: game data not installed"
+
+    import struct
+    world_modules()
+    from Locations import (
+        LOCATION_MIN_EPOCH,
+        RECRUIT_LOCATION_BY_DBNAME,
+        STARTING_LOCATIONS,
+    )
+    from Objects import UNIT_FAMILY_BY_NAME
+
+    MIN_EPOCH_OFF = 0x70
+    db_epoch = {}
+    for _i, r, _size in objects(DEFAULT_SSA):
+        name = record_name(r)
+        if name.strip():
+            db_epoch[name] = struct.unpack_from("<i", r, MIN_EPOCH_OFF)[0]
+
+    missing, wrong = [], []
+    for db_name in UNIT_FAMILY_BY_NAME:
+        if db_name.lower().startswith("x"):
+            continue                       # scenario and campaign props
+        loc = RECRUIT_LOCATION_BY_DBNAME.get(db_name)
+        if loc is None:
+            missing.append(db_name)
+            continue
+        raw = db_epoch.get(db_name)
+        # The database counts epochs from 1 at the Prehistoric Age and the rest
+        # of this project counts from 0; see unit_epoch() in gen_objects.py for
+        # how that was pinned down against the running game.
+        want = None if raw is None else max(raw - 1, 0)
+        got = LOCATION_MIN_EPOCH.get(loc)
+        # A check the match always starts with is pinned to 0 on purpose.
+        if want is None or loc in STARTING_LOCATIONS:
+            continue
+        # Above the unit's own epoch is fine and often right - the floor also
+        # carries the producing building, so a Prehistoric unit trained at a
+        # Stable waits for the Copper Age. Below it is the bug: it lets
+        # generation hide an epoch item behind a check that needs that epoch.
+        if got is None or got < want:
+            wrong.append(f"{loc}: floor {got}, unit's own epoch is {want}")
+
+    if missing:
+        return False, f"{len(missing)} unit(s) with no check: {missing[:3]}"
+    if wrong:
+        return False, f"{len(wrong)} wrong floor(s): {wrong[:3]}"
+    return True, (f"{len(RECRUIT_LOCATION_BY_DBNAME)} recruit checks, "
+                  "no floor below the unit's own epoch")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--quick", action="store_true", help="only the extremes")
@@ -458,6 +557,10 @@ def main():
 
     if not os.path.exists(GENERATE):
         sys.exit(f"not found: {GENERATE}")
+
+    # Seeds are generated by the installed apworld, so install this one first.
+    print(f"  {sync_world()}")
+    print()
 
     cases = []
     goals = [GOALS[0], GOALS[2], GOALS[-1]] if args.quick else GOALS
@@ -502,6 +605,11 @@ def main():
         print(f"  {'PASS' if ok else 'FAIL'}  {label:<45s}  {detail}")
         failures += 0 if ok else 1
     total_extra += 3
+
+    ok, detail = run_data_floors()
+    print(f"  {'PASS' if ok else 'FAIL'}  {'recruit floors vs database':<45s}  {detail}")
+    failures += 0 if ok else 1
+    total_extra += 1
 
     ok, detail = run_settings()
     print(f"  {'PASS' if ok else 'FAIL'}  {'match settings':<45s}  {detail}")

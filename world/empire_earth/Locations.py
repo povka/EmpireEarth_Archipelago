@@ -6,24 +6,28 @@ try:
     from .Epochs import EPOCH_NAMES
     from .Technologies import TECHNOLOGIES
     from .BuildingEpochs import BUILDING_EPOCH
+    from .Producers import UNIT_FAMILY_PRODUCERS
     from .Objects import (
         BUILDING_MIN_EPOCH,
         BUILDINGS,
         UNIT_FAMILIES,
         UNIT_FAMILY_BY_NAME,
         UNIT_FAMILY_MIN_EPOCH,
+        UNIT_MIN_EPOCH,
         WONDERS,
     )
 except ImportError:  # loaded as a top-level module by tools/
     from Epochs import EPOCH_NAMES
     from Technologies import TECHNOLOGIES
     from BuildingEpochs import BUILDING_EPOCH
+    from Producers import UNIT_FAMILY_PRODUCERS
     from Objects import (
         BUILDING_MIN_EPOCH,
         BUILDINGS,
         UNIT_FAMILIES,
         UNIT_FAMILY_BY_NAME,
         UNIT_FAMILY_MIN_EPOCH,
+        UNIT_MIN_EPOCH,
         WONDERS,
     )
 
@@ -36,7 +40,11 @@ BUILD_LOCATION_BASE = 200
 RECRUIT_LOCATION_BASE = 300
 WONDER_LOCATION_BASE = 400
 TECH_LOCATION_BASE = 500
-UNIT_LOCATION_BASE = 600
+# 1000, not 600: there are exactly 100 technologies, so the block below this one
+# ends at 599 and a single technology added to the game's tech tree would have
+# started handing out ids that already meant a unit. The gap is deliberate, and
+# tools/build_apworld.py fails the build if any two ids ever do collide.
+UNIT_LOCATION_BASE = 1000
 
 # One check per epoch entered.
 EPOCH_LOCATIONS: dict[str, int] = {
@@ -158,8 +166,30 @@ LOCATION_MIN_EPOCH.update({
     f"Build {display}": building_epoch(display)
     for _raw, display in _BUILDINGS_ORDERED
 })
+# A unit needs its own epoch AND somewhere to be recruited from, so the floor
+# is whichever of the two comes later - the same rule technologies follow below.
+#
+# The epoch is the unit's own, never its family's. A family's floor is its
+# *earliest* member, which is far too low for a late one: a Cataphract is a
+# Dark Age unit in the Lancer family, whose earliest member is a Copper Age
+# Horseman. Using the family's number let generation put `Epoch: Dark Age`
+# behind `Recruit Cataphract`, which needs the Dark Age to reach - a seed that
+# could not be finished, and was not.
+#
+# The producer half matters on its own: a Rock Thrower is a Prehistoric unit,
+# but it comes from a Barracks, so it is not obtainable until a Barracks is.
+# Any of a family's producers will do, so the floor is the earliest of them.
+def _producer_epoch(family: str) -> int:
+    buildings = UNIT_FAMILY_PRODUCERS.get(family, ())
+    return min((building_epoch(b) for b in buildings), default=0)
+
+
 LOCATION_MIN_EPOCH.update({
-    f"Recruit {UNIT_DISPLAY[db]}": UNIT_FAMILY_MIN_EPOCH.get(UNIT_FAMILY_BY_NAME[db], 0)
+    f"Recruit {UNIT_DISPLAY[db]}": max(
+        UNIT_MIN_EPOCH.get(
+            db, UNIT_FAMILY_MIN_EPOCH.get(UNIT_FAMILY_BY_NAME[db], 0)),
+        _producer_epoch(UNIT_FAMILY_BY_NAME[db]),
+    )
     for db in TRAINABLE_UNITS
 })
 LOCATION_MIN_EPOCH.update(WONDER_MIN_EPOCH)

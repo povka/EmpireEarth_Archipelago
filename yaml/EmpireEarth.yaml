@@ -37,16 +37,16 @@ Empire Earth:
 
   # tournament_low, tournament_defensive, standard_low, standard_high,
   # deathmatch
-  resources: standard_low
+  resources: standard_high
 
   # tournament or standard
   game_variant: standard
 
   # easy, medium, hard
-  difficulty: medium
+  difficulty: easy
 
   # slow, standard, fast, very_fast
-  game_speed: standard
+  game_speed: very_fast
 
   # Population limit, 50-1200. Rounded to the nearest 50 the game offers.
   unit_limit: 300
@@ -94,4 +94,4 @@ Empire Earth:
   # Map Type is not on this list: the client cannot set it, so pick whichever
   # one you like on the setup screen.
 
-  bundle_size: 500
+  bundle_size: 2500
