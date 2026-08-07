@@ -45,8 +45,6 @@ The Steam release starts Empire Earth elevated by default. Windows does not allo
 
 Run the **Archipelago Launcher as administrator before starting Empire Earth**. The GOG release normally does not need this.
 
-Alternatively, clear **Run this program as an administrator** in `EE-AOC.exe` → Properties → Compatibility.
-
 ## Important game behaviour
 
 - The client can hold Empire Earth's own victory and defeat screens off. This prevents an AI defeat or an in-game wonder victory from ending an Archipelago run early. `prevent_match_end` controls this.
