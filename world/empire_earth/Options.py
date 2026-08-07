@@ -119,8 +119,8 @@ class BuildingUnlocks(DefaultOnToggle):
     Put most building types behind Archipelago items.
 
     With this on, a building you have not found the unlock for is missing from
-    its build menu, and `Unlock: <name>` items are added to the pool. The
-    epoch requirement is unaffected: finding `Unlock: Siege Factory` in the
+    its build menu, and `Building: <name>` items are added to the pool. The
+    epoch requirement is unaffected: finding `Building: Siege Factory` in the
     Copper Age does not let you build one until the Dark Age, because the game
     checks the epoch separately.
 
