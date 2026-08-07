@@ -171,6 +171,7 @@ def spoiler_for(yaml_text: str) -> tuple[str | None, str]:
             [GENERATE, "--player_files_path", players, "--outputpath", out,
              "--seed", "424242"],
             capture_output=True, text=True, timeout=300,
+            stdin=subprocess.DEVNULL,
         )
         if proc.returncode != 0:
             tail = (proc.stdout or "")[-400:] + (proc.stderr or "")[-400:]
