@@ -305,13 +305,13 @@ Empire Earth:
 def run_unlocks(start: str, goal: str, goal_i: int):
     """No building unlock may sit behind a check that needs that building.
 
-    `Unlock: Stable` on `Build Stable` is the obvious form. The subtle one is
-    `Unlock: Stable` on `Recruit Lancer`, because cavalry is produced at a
+    `Building: Stable` on `Build Stable` is the obvious form. The subtle one is
+    `Building: Stable` on `Recruit Lancer`, because cavalry is produced at a
     stable - which is why the producer table exists at all.
     """
     world_modules()
     from Locations import LOCATION_MIN_EPOCH, RECRUIT_LOCATION_PRODUCERS
-    from Items import LOCKABLE_BUILDINGS
+    from Items import BUILDING_ITEM_PREFIX, LOCKABLE_BUILDINGS
 
     text, why = spoiler_for(UNLOCK_YAML.format(start=start, goal=goal))
     if text is None:
@@ -321,10 +321,14 @@ def run_unlocks(start: str, goal: str, goal_i: int):
     # count the buildings rather than the lines.
     placed, circular = set(), []
     for line in text.splitlines():
-        m = re.match(r"^(.+?): (Unlock: .+?)\s*$", line.strip())
+        # Built from the constant rather than spelled out, so renaming the item
+        # cannot leave this matching a prefix nothing produces any more - which
+        # would make every run pass with "no Unlock items reached the spoiler".
+        m = re.match(rf"^(.+?): ({re.escape(BUILDING_ITEM_PREFIX)}.+?)\s*$",
+                     line.strip())
         if not m:
             continue
-        loc, building = m.group(1), m.group(2)[len("Unlock: "):]
+        loc, building = m.group(1), m.group(2)[len(BUILDING_ITEM_PREFIX):]
         placed.add(building)
         if loc == f"Build {building}":
             circular.append(f"{building} on its own build check")
@@ -369,7 +373,7 @@ def run_simulation(start: str, goal: str, start_i: int, goal_i: int,
     its epoch, and a unit needs a producer you can build right now.
 
     It caught a real deadlock. `Recruit Siege` accepts a Barracks or a Siege
-    Factory, so a run holding `Unlock: Siege Factory` from the start looked able
+    Factory, so a run holding `Building: Siege Factory` from the start looked able
     to recruit siege units in the Copper Age - but a siege factory cannot be
     built until the Dark Age, and the epoch unlocks to get there were behind
     that very check.
@@ -378,7 +382,7 @@ def run_simulation(start: str, goal: str, start_i: int, goal_i: int,
     from Locations import LOCATION_MIN_EPOCH, LOCATION_NAME_TO_ID
     from Locations import building_epoch
     from Objects import BUILDINGS
-    from Items import LOCKABLE_BUILDINGS, BUILDING_PREREQS
+    from Items import LOCKABLE_BUILDINGS, BUILDING_PREREQS, building_item
     from Epochs import EPOCH_NAMES
 
     yaml = (UNLOCK_YAML if unlocks else LOGIC_YAML).format(start=start, goal=goal)
@@ -404,7 +408,7 @@ def run_simulation(start: str, goal: str, start_i: int, goal_i: int,
         if prereq and not buildable(prereq, epoch, inv):
             return False
         if unlocks and building in LOCKABLE_BUILDINGS \
-                and f"Unlock: {building}" not in inv:
+                and building_item(building) not in inv:
             return False
         return True
 

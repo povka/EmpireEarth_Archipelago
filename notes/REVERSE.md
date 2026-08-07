@@ -1483,7 +1483,7 @@ node found at 0 is the game's to manage, not ours.
 That matters for how the gate releases a building, and it took two attempts.
 
 Caching the value found at scan time and restoring it on unlock pins the
-building shut for the whole match: `Unlock: Siege Factory` received in the
+building shut for the whole match: `Building: Siege Factory` received in the
 Copper Age caches a 0, and writing that back every poll keeps the factory
 hidden long after the Dark Age makes it legal.
 
@@ -1533,7 +1533,7 @@ Capitol and Town Center are the two that never can be.
 
 ### Which building produces which unit
 
-`Recruit <family>` checks depend on this: a seed that hides `Unlock: Stable`
+`Recruit <family>` checks depend on this: a seed that hides `Building: Stable`
 behind `Recruit Lancer` is unwinnable, the same shape of bug as
 `Epoch: Bronze Age` on `Build Siege Factory`.
 
@@ -1562,7 +1562,7 @@ unit in that family. Its producers are `Barracks` **or** `Siege Factory`.
 `Domestic Wolf` - the Canine Scout - is filed under `Human` next to
 `Inf01 - Clubman` and `Inf01 - Rock Thrower`, which really are Barracks units.
 The Canine Scout comes from the **Capitol**, so the family's answer demanded
-`Unlock: Barracks` for a check that is available before anything is built.
+`Building: Barracks` for a check that is available before anything is built.
 
 That is the safe direction - over-constraining can shorten nothing but the
 fill's options, and can never make a seed unwinnable - which is exactly why it
@@ -1596,7 +1596,7 @@ name removed from one tuple.
 
 ### The test for this could never have caught it
 
-`run_unlocks` in `tools/test_generation.py` exists to catch `Unlock: Stable`
+`run_unlocks` in `tools/test_generation.py` exists to catch `Building: Stable`
 landing on `Recruit Lancer` - a building unlock behind a check that needs that
 building. Its docstring calls that "the subtle one". It was looking up
 

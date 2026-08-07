@@ -95,13 +95,23 @@ LOCKABLE_BUILDINGS: tuple[str, ...] = tuple(
 
 # Only in the pool when the building_unlocks option is on.
 UNLOCK_ITEM_BASE = 200
-UNLOCK_ITEMS: dict[str, str] = {
-    f"Unlock: {display}": display for display in LOCKABLE_BUILDINGS
-}
+
+# The name these items carry. A constant because four places across three
+# modules build it, plus the generation test harness, and a prefix that drifts
+# in one of them produces an item nothing recognises - `create_item` would
+# raise on a name absent from ITEM_TABLE, but a rule referring to the old name
+# would just silently never be satisfiable.
+BUILDING_ITEM_PREFIX = "Building: "
+
+
+def building_item(display: str) -> str:
+    """The item name that unlocks this building."""
+    return f"{BUILDING_ITEM_PREFIX}{display}"
+
 
 for _n, _display in enumerate(_ALL_BUILDINGS):
     if _display in LOCKABLE_BUILDINGS:
-        ITEM_TABLE[f"Unlock: {_display}"] = (
+        ITEM_TABLE[building_item(_display)] = (
             UNLOCK_ITEM_BASE + _n, ItemClassification.progression, None,
         )
 

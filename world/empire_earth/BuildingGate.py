@@ -14,7 +14,7 @@ menu. The consumer is the node's own vtable[1] at `0x005CF686`:
 
 Two things follow. The epoch requirement is a *separate* test in the same
 predicate, so clearing `+0x06` gates a building without disturbing the game's
-own epoch rules - `Unlock: Siege Factory` in the Copper Age still will not let
+own epoch rules - `Building: Siege Factory` in the Copper Age still will not let
 you build one until the Bronze Age. And `+0x20`, which correlates beautifully
 with availability, is never read; writing it does nothing, which is why three
 theories about it all failed before the predicate was disassembled.
@@ -176,7 +176,7 @@ class BuildingGate:
         client closed is what makes it survive a restart. Tracking it in memory
         looked equivalent and was not: a client that reconnected mid-match had
         an empty record, so it could never reopen a building an earlier run had
-        closed, and `Unlock: Stable` arrived to no effect.
+        closed, and `Building: Stable` arrived to no effect.
         """
         nodes = self.scan(buildings)
         epoch = self.current_epoch()

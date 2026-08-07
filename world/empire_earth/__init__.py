@@ -6,6 +6,7 @@ from worlds.LauncherComponents import Component, Type, components, launch_subpro
 from .Items import (
     BUILDING_PREREQS,
     TECH_ITEMS,
+    building_item,
     ITEM_NAME_TO_ID,
     ITEM_TABLE,
     LOCKABLE_BUILDINGS,
@@ -99,7 +100,7 @@ class EmpireEarthWorld(World):
         return bool(self.options.building_unlocks.value)
 
     def unlock_items(self) -> list[str]:
-        """`Unlock:` items this seed uses.
+        """`Building:` items this seed uses.
 
         A building whose epoch is past the goal can never be built, so an
         unlock for it would be an item that does nothing.
@@ -107,7 +108,7 @@ class EmpireEarthWorld(World):
         if not self.gates_buildings:
             return []
         return [
-            f"Unlock: {b}" for b in LOCKABLE_BUILDINGS
+            building_item(b) for b in LOCKABLE_BUILDINGS
             if LOCATION_MIN_EPOCH.get(f"Build {b}", 0) <= self.goal_epoch
         ]
 
@@ -143,12 +144,12 @@ class EmpireEarthWorld(World):
 
         Each option is an unlock item paired with the epoch items needed to
         build that building. Both halves are required: holding
-        `Unlock: Siege Factory` is no use in the Copper Age, because a siege
+        `Building: Siege Factory` is no use in the Copper Age, because a siege
         factory cannot be built until the Dark Age.
 
         Leaving the epoch half out is enough to make a seed unwinnable. The
         Siege family can be recruited at a Barracks or a Siege Factory, so a
-        run that started holding `Unlock: Siege Factory` looked able to recruit
+        run that started holding `Building: Siege Factory` looked able to recruit
         siege units immediately, and generation was free to put the epoch
         unlocks that reach the Dark Age behind that check.
         """
@@ -157,13 +158,13 @@ class EmpireEarthWorld(World):
 
         def option(building: str) -> tuple[str, list[str]]:
             floor = LOCATION_MIN_EPOCH.get(f"Build {building}", 0)
-            return f"Unlock: {building}", self.epoch_items_up_to(floor)
+            return building_item(building), self.epoch_items_up_to(floor)
 
         if name.startswith("Build "):
             building = name[len("Build "):]
             if building in LOCKABLE_BUILDINGS:
                 # The epoch half is already required by the location's own floor.
-                return [(f"Unlock: {building}", [])]
+                return [(building_item(building), [])]
             # Something reached through another building - a Town Center is
             # five citizens garrisoned in a Settlement - needs whatever gates
             # the building it comes from.

@@ -293,7 +293,7 @@ LOCATION_MIN_EPOCH.update({
 # `Domestic Wolf` - the Canine Scout - is filed under `Human` alongside
 # `Inf01 - Clubman` and `Inf01 - Rock Thrower`, which genuinely do come from a
 # Barracks. It comes from the Capitol, so the family's answer demanded
-# `Unlock: Barracks` for a check that is available before anything is built.
+# `Building: Barracks` for a check that is available before anything is built.
 #
 # Over-constraining is the safe direction and can never make a seed unwinnable,
 # which is why this was not a live bug. It costs reachability instead: in a
@@ -356,7 +356,7 @@ RECRUIT_LOCATION_PRODUCERS: dict[str, tuple[str, ...]] = {
 # Location name -> the building that researches it. A technology is offered by
 # one building only, so with building unlocks on, a check for it needs that
 # building as well as the epoch: Printing Press is a Renaissance Temple
-# technology, so it can hold neither `Unlock: Temple` nor any epoch up to the
+# technology, so it can hold neither `Building: Temple` nor any epoch up to the
 # Renaissance.
 TECH_LOCATION_BUILDING: dict[str, str] = {
     f"Research {name}": building

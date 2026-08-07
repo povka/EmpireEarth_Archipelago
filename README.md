@@ -2,7 +2,7 @@
 
 Play **Empire Earth: The Art of Conquest** as part of an [Archipelago](https://archipelago.gg) multiworld.
 
-Advance through the epochs, build your empire, recruit units, and research technology to send checks. The things that let you progress — epoch advances and, optionally, building unlocks — can arrive from any player in the room.
+Advance through the epochs, build your empire, recruit units, and research technology to send checks. The things that let you progress — epoch advances and, optionally, building unlocks — can arrive from any player in the seed.
 
 This project supports single-player skirmish in the GOG and Steam releases of **Empire Earth Gold**. It is an early release, but intended to be playable.
 
@@ -11,7 +11,7 @@ This project supports single-player skirmish in the GOG and Steam releases of **
 - **Epochs.** Advancing is controlled by `Epoch: <name>` items instead of the usual two-building requirement. Epochs still have to be reached in order and still cost their normal in-game resources.
 - **Buildings and units.** Building 19 building types and recruiting any of the 203 unit types can send checks. Units that would normally become obsolete stay available, so checks do not disappear as you advance.
 - **Technologies.** Each of the 100 technologies can be a check. Researching sends the check; its effect returns as a `Tech:` item through Archipelago.
-- **Building unlocks.** With `building_unlocks` enabled, 17 buildings are removed from the build menu until their `Unlock: <building>` item arrives.
+- **Building unlocks.** With `building_unlocks` enabled, 17 buildings are removed from the build menu until their `Building: <building>` item arrives.
 - **Wonders.** When using a wonder goal, each completed wonder is a check.
 - **Resources.** Food, wood, stone, gold, and iron bundles are credited to your stockpile when received.
 
@@ -27,8 +27,8 @@ No game files are patched or replaced. The client reads and writes the running g
 
 ## Install and play
 
-1. Download `empire_earth.apworld` from this repository.
-2. Put it in Archipelago's `custom_worlds` folder:
+1. Download `empire_earth.apworld` from Releases.
+2. Put it in Archipelago's `custom_worlds` folder, default:
    - Windows: `C:\ProgramData\Archipelago\custom_worlds`
    - Linux: `~/Archipelago/custom_worlds`
 3. Restart the Archipelago Launcher.
@@ -129,7 +129,7 @@ For the game-memory work, object data, and discarded approaches behind the proje
 - [Archipelago](https://github.com/ArchipelagoMW/Archipelago) for the multiworld framework and world API.
 - **Mark Adler** for [`blast.c`](https://github.com/madler/zlib/tree/master/contrib/blast), ported here to read PKWARE-imploded `data.ssa` entries.
 - **GOG.com** for the DirectX 1–7 wrapper used by Empire Earth Gold.
-- The [Empire Earth Fandom wiki](https://empireearth.fandom.com/wiki/Epoch) for useful reference material.
+- The [Empire Earth Fandom wiki](https://empireearth.fandom.com/wiki) for useful reference material.
 - [capstone](https://www.capstone-engine.org/), [pefile](https://github.com/erocarrera/pefile), and [numpy](https://numpy.org/) for reverse-engineering tools used during development. They are not required to run the world.
 
 ## AI disclosure

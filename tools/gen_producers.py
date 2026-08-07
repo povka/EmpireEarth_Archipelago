@@ -2,7 +2,7 @@
 
 Gating buildings behind Archipelago items needs this. A `Recruit <family>`
 check is only reachable if you can build something that produces that family,
-so without it generation is free to hide `Unlock: Stable` behind
+so without it generation is free to hide `Building: Stable` behind
 `Recruit Lancer` - the same circular placement that once put
 `Epoch: Bronze Age` on `Build Siege Factory`.
 

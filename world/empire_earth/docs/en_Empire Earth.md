@@ -21,8 +21,8 @@ immediately, so other players can accelerate your economy.
 
 With the optional `building_unlocks` setting, eighteen of the building
 types are taken out of your hands too. A building you have not found
-the `Unlock: <name>` item for is simply absent from its build menu. The epoch
-requirement still applies on top: finding `Unlock: Siege Factory` in the Copper
+the `Building: <name>` item for is simply absent from its build menu. The epoch
+requirement still applies on top: finding `Building: Siege Factory` in the Copper
 Age does not let you build one until the Dark Age. Capitol is never locked, since every match starts with
 one and it is what makes citizens, and neither is the Farm, which has no
 build-menu entry the client can hold shut.
@@ -57,7 +57,7 @@ is refused if wonders can win the game without also winning the seed:
 ## Which items can be in another player's world?
 
 - `Epoch: <name>` — one per epoch up to your goal
-- `Unlock: <building>` — one per building, with `building_unlocks` on
+- `Building: <building>` — one per building, with `building_unlocks` on
 - `Tech: <name>` — one per technology, carrying its benefit
 - `Food Bundle`, `Wood Bundle`, `Stone Bundle`, `Gold Bundle`, `Iron Bundle`
 
