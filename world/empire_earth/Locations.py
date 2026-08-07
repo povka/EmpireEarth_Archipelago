@@ -7,6 +7,7 @@ try:
     from .Technologies import TECHNOLOGIES
     from .BuildingEpochs import BUILDING_EPOCH
     from .Producers import UNIT_FAMILY_PRODUCERS
+    from .Upgrades import UNIT_SUPERSEDES
     from .Objects import (
         BUILDING_MIN_EPOCH,
         BUILDINGS,
@@ -21,6 +22,7 @@ except ImportError:  # loaded as a top-level module by tools/
     from Technologies import TECHNOLOGIES
     from BuildingEpochs import BUILDING_EPOCH
     from Producers import UNIT_FAMILY_PRODUCERS
+    from Upgrades import UNIT_SUPERSEDES
     from Objects import (
         BUILDING_MIN_EPOCH,
         BUILDINGS,
@@ -58,7 +60,22 @@ EPOCH_LOCATIONS: dict[str, int] = {
 }
 
 # One check per building type. Sorted by database name so ids stay stable.
-_BUILDINGS_ORDERED = sorted(BUILDINGS.items())
+#
+# Only buildings whose epoch was measured from the running game's tech tree.
+# `dbobjects.dat` is not good enough for a building: it reads an epoch high for
+# most and, among the records Art of Conquest adds, plainly wrong for some -
+# the Teleporter and the FTL Research Center are Space Age structures stored as
+# epoch 3. A floor that reads low is the direction that strands a seed, because
+# it lets generation hide an epoch item behind a check that needs it.
+#
+# So an unmeasured building is simply not a check yet. Re-running
+# tools/gen_building_epochs.py against a live Art of Conquest match is what
+# admits the Space Dock, the Teleporter and the rest - nothing here needs
+# changing when it does.
+_BUILDINGS_ORDERED = sorted(
+    (raw, display) for raw, display in BUILDINGS.items()
+    if display in BUILDING_EPOCH
+)
 BUILD_LOCATIONS: dict[str, int] = {
     f"Build {display}": BASE_ID + BUILD_LOCATION_BASE + n
     for n, (_raw, display) in enumerate(_BUILDINGS_ORDERED)
@@ -68,14 +85,34 @@ BUILD_LOCATIONS: dict[str, int] = {
 # now has its own check, in the 600 block below. The block is left unused rather
 # than reassigned, so an id can never mean two different things.
 
-# One check per wonder. Unlike buildings these are not always in a seed: a
-# wonder cannot be built before its own epoch, and the client caps the match at
-# the goal epoch, so Time Machine only exists in a Space Age seed.
+# Wonders are not checks. Building one sends nothing.
+#
+# They used to be, and the 400 block below is left unused rather than reassigned
+# so an id can never come to mean two different things. What a wonder has now is
+# an unlock item (`Items.wonder_item`): it is gated like a building, and under a
+# wonder goal it is the goal, so the find is the reward and the construction is
+# what you do with it - rather than the same wonder paying out twice.
 _WONDERS_ORDERED = sorted(WONDERS.items())
-WONDER_LOCATIONS: dict[str, int] = {
-    f"Build {display}": BASE_ID + WONDER_LOCATION_BASE + n
-    for n, (_raw, (display, _epoch)) in enumerate(_WONDERS_ORDERED)
-}
+
+# Technologies a seed never offers, because the game does not reliably offer
+# them either. Empty, and that is the finding rather than an oversight.
+#
+# `Oracle` was listed here for one afternoon. It was reported missing from a
+# live Temple, and the run was stuck behind `Building: Hospital` sitting on its
+# check - but checking vanilla Art of Conquest afterwards found it exactly
+# where every source said it would be, a Bronze Age Temple technology beside
+# Monotheism. The button appears below the others and had been overlooked.
+#
+# Excluding it would have deleted a real check and, worse, hidden a client bug
+# had there been one. There is not: nothing here clears a technology node's
+# availability. `BuildingGate` only writes `+0x06` on nodes whose icon matches
+# a gated building or wonder exactly, and `but_oracle_04` matches none.
+#
+# The mechanism stays because the hazard is real - units and buildings have
+# both turned out to have members the game does not offer - but a name only
+# belongs here on evidence stronger than one absence, since the cost of being
+# wrong is a check that quietly leaves the pool.
+EXCLUDED_TECHNOLOGIES: frozenset[str] = frozenset()
 
 # One check per technology. Technologies are left exactly where the game puts
 # them - nothing is hidden or unlocked - so a check is simply researching one.
@@ -88,13 +125,42 @@ TECH_LOCATIONS: dict[str, int] = {
 # One check per individual unit.
 #
 # These would normally be missable - Empire Earth withdraws a unit once a later
-# tier replaces it - which is why they were once family checks instead. The
-# client now clears both of the engine's retirement paths on every node
-# (Obsolescence.py), so a Rock Thrower stays recruitable for the whole match
-# and these are as safe as any other check.
+# tier replaces it - which is why they were once family checks instead. Two
+# separate things keep them sendable, because the engine retires a unit in two
+# different ways:
+#
+# * An *expiry* ("no longer offered after epoch N") is cleared outright by
+#   Obsolescence.py, so a Rock Thrower stays recruitable for the whole match.
+# * A *replacement* ("this later unit took over") is left alone - cancelling it
+#   reverts the upgrade rather than preserving both - and the replacement sends
+#   the replaced unit's check instead. See LOCATION_ALSO_SENDS below.
 #
 # `x`-prefixed records are campaign and scenario units, left out entirely.
 EXCLUDED_UNIT_PREFIXES = ("x",)
+
+# Campaign heroes. Art of Conquest ships a handful that no skirmish offers -
+# the Roman campaign's Marius and Greek Captain, Lt. Stock, Bulldog Ramsey, and
+# a second Julius Caesar marked "Conscript" - and a check for one can never be
+# sent.
+#
+# The Conscript is the one that did damage rather than merely sitting there. It
+# shares tier 5 with the real Julius Caesar, so the tier had *three* heroes in
+# it, and the pairing matched Charlemagne to the campaign copy - leaving
+# `h2-5 Julius Caesar (Morale)`, the one a skirmish actually offers, with no
+# partner and no way to be sent once Charlemagne was taken.
+EXCLUDED_UNIT_MARKERS = ("conscript",)
+EXCLUDED_UNIT_NAMES = frozenset({
+    "Hero Bulldog Ramsey (Morale)",
+    "h Greek Captain",
+    "h Lt. Stock",
+})
+
+
+def _is_excluded(name: str) -> bool:
+    low = name.lower()
+    return (low.startswith(EXCLUDED_UNIT_PREFIXES)
+            or name in EXCLUDED_UNIT_NAMES
+            or any(m in low for m in EXCLUDED_UNIT_MARKERS))
 
 # The morale heroes, `h2-3` .. `h2-14`, one per tier facing an `h1-` healing
 # hero of the same tier. You cannot have both: taking either forecloses the
@@ -114,12 +180,13 @@ PAIRED_UNIT_PREFIXES = ("h2-",)
 
 TRAINABLE_UNITS: tuple[str, ...] = tuple(sorted(
     name for name in UNIT_FAMILY_BY_NAME
-    if not name.lower().startswith(EXCLUDED_UNIT_PREFIXES + PAIRED_UNIT_PREFIXES)
+    if not _is_excluded(name)
+    and not name.lower().startswith(PAIRED_UNIT_PREFIXES)
 ))
 
 PAIRED_UNITS: tuple[str, ...] = tuple(sorted(
     name for name in UNIT_FAMILY_BY_NAME
-    if name.lower().startswith(PAIRED_UNIT_PREFIXES)
+    if name.lower().startswith(PAIRED_UNIT_PREFIXES) and not _is_excluded(name)
 ))
 
 ALL_RECRUITABLE: tuple[str, ...] = TRAINABLE_UNITS + PAIRED_UNITS
@@ -138,6 +205,9 @@ ALL_RECRUITABLE: tuple[str, ...] = TRAINABLE_UNITS + PAIRED_UNITS
 # looks at the display name at all.
 UNIT_DISPLAY_OVERRIDES: dict[str, str] = {
     "Domestic Wolf": "Canine Scout",
+    # The tidy-up only strips a leading tier number, and this name has none, so
+    # the check read `Recruit spc Spy Satellite`.
+    "spc Spy Satellite": "Spy Satellite",
 }
 
 
@@ -145,7 +215,7 @@ UNIT_DISPLAY_OVERRIDES: dict[str, str] = {
 # separator is a dash for all but one of them - into ('1', 3, 'Sargon of Akkad
 # (heal)'). The line tells a healing hero from a morale one and the tier is what
 # pairs them up.
-_HERO = re.compile(r"^h([12])[-\s]\s*(\d+)\s+(.+)$")
+_HERO = re.compile(r"^h([12])\s*-?\s*(\d+)\s+(.+)$")
 
 # The trailing role marker. Dropped from the display name: the two heroes of a
 # tier already have different names, and `Recruit Sargon of Akkad` is what the
@@ -235,7 +305,6 @@ RECRUIT_LOCATION_BY_DBNAME: dict[str, str] = {
 LOCATION_TABLE: dict[str, int] = {
     **EPOCH_LOCATIONS,
     **BUILD_LOCATIONS,
-    **WONDER_LOCATIONS,
     **TECH_LOCATIONS,
     **RECRUIT_LOCATIONS,
 }
@@ -247,13 +316,16 @@ BUILD_LOCATION_BY_DBNAME: dict[str, str] = {
     raw: f"Build {display}" for raw, display in _BUILDINGS_ORDERED
 }
 
-WONDER_LOCATION_BY_DBNAME: dict[str, str] = {
-    raw: f"Build {display}" for raw, (display, _epoch) in _WONDERS_ORDERED
+# Database name -> display name, for the client's wonder counting and its
+# `/wonders` display. Not a location lookup any more: nothing is sent for one.
+WONDER_BY_DBNAME: dict[str, str] = {
+    raw: display for raw, (display, _epoch) in _WONDERS_ORDERED
 }
 
-# Location name -> the epoch that wonder first becomes buildable in.
+# Wonder -> the epoch it first becomes buildable in. Still needed even though
+# it is not a check: the goal has to know when N wonders can exist.
 WONDER_MIN_EPOCH: dict[str, int] = {
-    f"Build {display}": epoch for _raw, (display, epoch) in _WONDERS_ORDERED
+    display: epoch for _raw, (display, epoch) in _WONDERS_ORDERED
 }
 
 # Location name -> the epoch that unlocks it. Everything a seed offers has a
@@ -301,6 +373,16 @@ LOCATION_MIN_EPOCH.update({
 # at all, and this is a fourth.
 UNIT_PRODUCER_OVERRIDES: dict[str, tuple[str, ...]] = {
     "Domestic Wolf": ("Capitol", "Town Center"),
+    # Trained at both, which no family can express: its family is Helicopter
+    # and every other member comes from the Airport alone. Missing the second
+    # building would not strand a seed - the check stays reachable through the
+    # Airport - but it would tell logic a Navy Yard is no help when it is.
+    "a Helicopter Sea King II 13": ("Airport", "Navy Yard"),
+    # Two members of the `Space Fighter` family that the Space Dock does not
+    # build, reported from the game: the Airport's Space Age fighter, and a
+    # satellite launched from the Capitol.
+    "a Fighter15 Planetary Fighter": ("Airport",),
+    "spc Spy Satellite": ("Capitol",),
 }
 
 
@@ -324,7 +406,6 @@ LOCATION_MIN_EPOCH.update({
     )
     for db in ALL_RECRUITABLE
 })
-LOCATION_MIN_EPOCH.update(WONDER_MIN_EPOCH)
 # A technology needs its building, and the building has an epoch of its own, so
 # the floor is whichever comes later. Most technologies sit in the same epoch as
 # their building, but the late Cyber ones do not, and using the technology's
@@ -346,12 +427,176 @@ PAIRED_LOCATIONS: dict[str, str] = {
     for db, other in UNIT_PAIR.items()
 }
 
+
+# Units only some civilisations can field. Their checks are real and sendable,
+# but nothing the seed needs is ever placed on one.
+#
+# The client deliberately leaves civilisation choice to the player - it forces
+# the rest of the skirmish setup, not that - so a civilisation-locked unit is
+# only recruitable if the player happened to pick the right one. Nothing warns
+# them at generation time, and by the time progression turns out to sit behind
+# a unit their civilisation cannot build, the only way out is a fresh match.
+#
+# `Inf15 - Cyber Ninja` needs Japan, or a custom civilisation taking the power
+# that grants it. Marked EXCLUDED rather than dropped: it stays a check worth
+# sending, it just cannot be load-bearing.
+CIV_LOCKED_UNITS: tuple[str, ...] = (
+    "Inf15 - Cyber Ninja",
+)
+
+# The same, as location names, for the world to mark EXCLUDED. Filtered through
+# the lookup so a name that stops being a check cannot leave a stale entry.
+CIV_LOCKED_LOCATIONS: frozenset[str] = frozenset(
+    RECRUIT_LOCATION_BY_DBNAME[db]
+    for db in CIV_LOCKED_UNITS
+    if db in RECRUIT_LOCATION_BY_DBNAME
+)
+
+# Buildings that are real, and buildable only in some matches.
+#
+# A tech tree node and a measured epoch say a building exists, not that this
+# match can raise one. All three below are listed as buildings by the game's
+# own wiki and measured cleanly - Pyramid at the Prehistoric Age, Space Dock
+# and Space Turret at the Space Age - yet a Space Age match offered none of
+# them.
+#
+# The Space Dock and the Space Turret turn out to be a *map* dependency rather
+# than an epoch one. The dock can only be placed "on the border between land
+# and space", which no ordinary map has; on a `Planets Earth` map both appear
+# and can be built. That is the same shape as a Dock needing water, except this
+# project leaves map choice to the player, so no seed can promise the terrain.
+#
+# The Pyramid is still unexplained - absent from a Space Age match on a normal
+# map, and not obviously map-dependent - so it stays here on the same terms.
+#
+# So they stay as checks and stop being load-bearing: sendable when a match
+# does offer them, harmless when it does not. Remove an entry only when
+# something guarantees the conditions - forcing the map type would do it.
+UNCONFIRMED_BUILDINGS: tuple[str, ...] = (
+    "Pyramid",
+)
+
+# Buildings that *replace* another on some maps rather than joining it.
+#
+# A `Planets` map has no Dock and no Navy Yard: the Space Dock and the Space
+# Turret stand in their place. So on those maps `Build Dock` can never be sent,
+# and on every other map `Build Space Dock` cannot - and both are ordinary
+# progression-bearing checks, so either way round strands a seed.
+#
+# `map_terrain` decides which half of each pair a seed contains, so only one is
+# ever a check. The cascade below is kept anyway, and it earns its place as
+# insurance: a player who declares the wrong terrain still sends the check they
+# do have, because a Space Dock reports `Build Dock` too. Sending a location the
+# seed does not contain costs nothing.
+BUILDING_PAIRS: dict[str, str] = {
+    "Dock": "Space Dock",
+    "Navy Yard": "Space Turret",
+}
+
+# Which terrains a building exists on. Anything absent is on all of them.
+#
+# This is the one thing about a match a seed cannot see: the client forces map
+# *size* but never map choice, so the `map_terrain` option is the player saying
+# which of these they will play. Everything the terrain decides - the build
+# checks, the units those buildings train, and the substituted wonder - is
+# filtered through it, which is what lets those checks stay load-bearing rather
+# than being written off as things that might not exist.
+LAND_ONLY = "land_only"
+LAND_AND_WATER = "land_and_water"
+SPACE = "space"
+ALL_TERRAINS = frozenset({LAND_ONLY, LAND_AND_WATER, SPACE})
+
+BUILDING_TERRAINS: dict[str, frozenset[str]] = {
+    # No water, no Dock; on a Planets map a Space Dock stands in its place.
+    "Dock": frozenset({LAND_AND_WATER}),
+    "Navy Yard": frozenset({LAND_AND_WATER}),
+    "Space Dock": frozenset({SPACE}),
+    "Space Turret": frozenset({SPACE}),
+}
+
+WONDER_TERRAINS: dict[str, frozenset[str]] = {
+    "Pharos Lighthouse": frozenset({LAND_ONLY, LAND_AND_WATER}),
+    "Orbital Space Station": frozenset({SPACE}),
+}
+
+
+def building_terrains(display: str) -> frozenset[str]:
+    return BUILDING_TERRAINS.get(display, ALL_TERRAINS)
+
+
+def wonder_terrains(display: str) -> frozenset[str]:
+    return WONDER_TERRAINS.get(display, ALL_TERRAINS)
+
+# Wonders with the same map dependency. They are not checks, so nothing here
+# can go unsendable - but the wonder goal counts how many you could raise, and
+# counting one that needs terrain the seed cannot promise would call a run
+# finished while the player was still short a wonder.
+# The building pairs above, both ways round, as location names.
+_PAIRED_BUILD_LOCATIONS: dict[str, str] = {}
+for _a, _b in BUILDING_PAIRS.items():
+    _la, _lb = f"Build {_a}", f"Build {_b}"
+    if _la in BUILD_LOCATIONS and _lb in BUILD_LOCATIONS:
+        _PAIRED_BUILD_LOCATIONS[_la] = _lb
+        _PAIRED_BUILD_LOCATIONS[_lb] = _la
+
+
+
+
+def _recruit_location(db_name: str) -> str | None:
+    return RECRUIT_LOCATION_BY_DBNAME.get(db_name)
+
+
+# Location name -> every other check that recruiting it also sends.
+#
+# Two different relations, both of which exist to stop a check becoming
+# unsendable, and both of which the fill can represent because they only ever
+# add sends.
+#
+# *Heroes* are a mutually exclusive pair: one of the two can exist in a match,
+# so each sends the other and the pair is always satisfiable together.
+#
+# *Upgrades* run one way. Empire Earth retires a unit when a later tier
+# replaces it, so a Slinger stops being offered once you have Simple Bowmen.
+# The client used to prevent that by clearing the engine's superseded flag,
+# which does not hold the old unit alongside the new one - it cancels the
+# upgrade, and the Archery Range goes back to offering Slingers. So the upgrade
+# is left alone and the replacement carries the replaced unit's check instead:
+# build a Simple Bowman and Slinger's check goes with it, build a Long Bow and
+# all four below it go.
+#
+# The epoch floors are unaffected. A check's floor is the earliest point it can
+# be sent, and that is still the unit's own tier - a Slinger sends Slinger.
+LOCATION_ALSO_SENDS: dict[str, tuple[str, ...]] = {}
+for _here, _partner in _PAIRED_BUILD_LOCATIONS.items():
+    LOCATION_ALSO_SENDS[_here] = (_partner,)
+
+for _db in ALL_RECRUITABLE:
+    _here = RECRUIT_LOCATION_BY_DBNAME[_db]
+    _also = [PAIRED_LOCATIONS[_here]] if _here in PAIRED_LOCATIONS else []
+    # Some superseded units are not checks at all (scenario props), so the
+    # lookup is filtered rather than assumed.
+    _also += [loc for loc in map(_recruit_location, UNIT_SUPERSEDES.get(_db, ()))
+              if loc is not None]
+    if _also:
+        LOCATION_ALSO_SENDS[_here] = tuple(dict.fromkeys(_also))
+
 # Location name -> the buildings that can train it. Resolved here, per unit, so
 # the rules never have to go back to the family - which is what got the Canine
 # Scout wrong.
 RECRUIT_LOCATION_PRODUCERS: dict[str, tuple[str, ...]] = {
     f"Recruit {UNIT_DISPLAY[db]}": unit_producers(db) for db in ALL_RECRUITABLE
 }
+
+# Every check that must never hold anything the seed needs.
+#
+# Terrain-specific checks are not here. `map_terrain` says which map the player
+# will play, so a check the terrain rules out is left out of the seed entirely
+# rather than shipped as something nothing may depend on.
+NO_PROGRESSION_LOCATIONS: frozenset[str] = (
+    CIV_LOCKED_LOCATIONS
+    | frozenset(f"Build {b}" for b in UNCONFIRMED_BUILDINGS
+                if f"Build {b}" in BUILD_LOCATIONS)
+)
 
 # Location name -> the building that researches it. A technology is offered by
 # one building only, so with building unlocks on, a check for it needs that

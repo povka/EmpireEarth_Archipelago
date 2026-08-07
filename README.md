@@ -9,13 +9,15 @@ This project supports single-player skirmish in the GOG and Steam releases of **
 ## What is shuffled?
 
 - **Epochs.** Advancing is controlled by `Epoch: <name>` items instead of the usual two-building requirement. Epochs still have to be reached in order and still cost their normal in-game resources.
-- **Buildings and units.** Building 19 building types and recruiting any of the 203 unit types can send checks. Units that would normally become obsolete stay available, so checks do not disappear as you advance.
+- **Buildings and units.** Building 22 building types and recruiting any of the 247 unit types can send checks. No check disappears as you advance: units that would simply expire stay recruitable, and where a later tier replaces an earlier one, recruiting the replacement sends the earlier unit's check too — a Simple Bowman sends Slinger's, a Long Bow sends every archer below it.
 - **Technologies.** Each of the 100 technologies can be a check. Researching sends the check; its effect returns as a `Tech:` item through Archipelago.
-- **Building unlocks.** With `building_unlocks` enabled, 17 buildings are removed from the build menu until their `Building: <building>` item arrives.
-- **Wonders.** When using a wonder goal, each completed wonder is a check.
+- **Building unlocks.** With `building_unlocks` enabled, 20 buildings and every wonder are removed from the build menu until their `Building: <building>` or `Wonder: <name>` item arrives.
+- **Wonders.** Wonders are gated by `Wonder: <name>` items, under the same `building_unlocks` option as buildings. Building one sends no check — finding the item is the reward, and raising the wonder is what you do with it.
 - **Resources.** Food, wood, stone, gold, and iron bundles are credited to your stockpile when received.
 
 You choose a starting epoch, a goal epoch, and whether the goal is reaching that epoch, building wonders, or either one.
+
+You also declare what kind of map you intend to play, with `map_terrain`. Empire Earth decides part of your build menu from the terrain — a land-only map has no Dock, and a space map replaces the Dock with a Space Dock rather than adding one — and the client never picks your map, so the seed has to be told. Checks the terrain rules out are left out. Nothing enforces it, so start a match that matches what you chose.
 
 ## Requirements
 
@@ -65,6 +67,7 @@ The complete commented template is [`yaml/EmpireEarth.yaml`](yaml/EmpireEarth.ya
 | `building_unlocks` | Put building permissions in the item pool. |
 | `technology_checks` | Turn research into checks and technology effects into items. |
 | `wonders_for_victory` | Wonders needed for a wonder goal. Use `0` for `reach_epoch`; use `1`–`6` for a wonder or either goal. |
+| `map_terrain` | `land_only`, `land_and_water`, or `space` — the kind of map you will play. The seed only offers checks that map can build, so start a match that matches. |
 | `opponents` | `hostile` for a normal AI or `allied` for a non-hostile opponent. |
 | `prevent_match_end` | Prevent Empire Earth from ending the match through its own win/loss rules. |
 | `ingame_messages` | Display received items and AP status messages in game. |

@@ -10,10 +10,13 @@ Only reads are performed here; nothing in this module writes to the game.
 
 from __future__ import annotations
 
+import struct
+
 ROSTER_OFFSET = 0x40
 ROSTER_STRIDE = 8
-ROSTER_MAX = 4096            # generous upper bound on slots to inspect
-ROSTER_GAP_TOLERANCE = 128   # empty slots to skip before deciding the list ended
+ROSTER_MAX = 32768           # slots to sweep; see units() for why overshooting
+                             # is safe now
+UNIT_OWNER_OFFSET = 0x18     # -> the owning player object
 UNIT_VTABLE = 0x00846DDC     # EEComplexUnit
 UNIT_DEF_OFFSET = 0x2C       # -> type definition
 # The definition embeds two strings: a behaviour label at +0x0C and the object
@@ -40,6 +43,11 @@ class Roster:
         self.profile = profile
         self._uw_vtable = None
         self._def_cache: dict[int, str] = {}
+        # Diagnostics for `/roster`: how far the last walk reached, and how
+        # many objects it found whose type name would not read. Both were
+        # guesswork the last time a unit went missing from the list.
+        self.last_slot = -1
+        self.unnamed = 0
 
     # --- helpers ---------------------------------------------------------
 
@@ -79,24 +87,50 @@ class Roster:
     def units(self) -> list[int]:
         """Addresses of every EEComplexUnit the local player owns.
 
-        The array is sparse - freed slots leave nulls behind - so this tolerates
-        gaps and only stops after a long run of empty entries.
+        The array is sparse and its end is not marked. Two earlier versions
+        tried to find that end by counting empty slots, and each was wrong in
+        one direction:
+
+        * Stopping after 128 empties stopped *inside* the array. Reported from
+          a live game as an Archery Range, a Chariot Archer and a hero that
+          sent no check while a Capitol and a Domestic Wolf sent theirs.
+        * Not stopping swept the heap beyond it, where other players' objects
+          live. Every one is a real EEComplexUnit with a readable name, so they
+          were reported as the player's own and a run's worth of checks nobody
+          had earned went to the server, where they cannot be taken back.
+
+        Neither is needed, because an object says who owns it: `+0x18` is the
+        owning player object. Measured against a live match - every object of
+        the local player held the local player object there, every object of
+        each AI held theirs, and 118 foreign objects lying past the end of the
+        array were rejected on that basis alone, nothing misclassified.
+
+        So the sweep is deliberately generous and ownership decides. Sweeping
+        past the end also turns up the player's *own* objects again, listed in
+        other structures - all six in that match reappeared around slot 26,400
+        - so results are deduplicated by address, or `/roster` would count each
+        of them twice.
         """
         obj = self.player_object()
         if obj is None:
             return []
-        out = []
-        empty_run = 0
-        for i in range(ROSTER_MAX):
-            ptr = self.proc.read_u32(obj + ROSTER_OFFSET + i * ROSTER_STRIDE)
-            if ptr and 0x10000 < ptr < 0x7FFF0000 and \
-                    self.proc.read_u32(ptr) == UNIT_VTABLE:
-                out.append(ptr)
-                empty_run = 0
-            else:
-                empty_run += 1
-                if empty_run >= ROSTER_GAP_TOLERANCE and out:
-                    break
+        blob = self.proc.read(obj + ROSTER_OFFSET, ROSTER_MAX * ROSTER_STRIDE)
+        if not blob:
+            return []
+
+        out, seen = [], set()
+        self.last_slot = -1
+        for off in range(0, len(blob) - 3, ROSTER_STRIDE):
+            ptr = struct.unpack_from("<I", blob, off)[0]
+            if not (ptr and 0x10000 < ptr < 0x7FFF0000) or ptr in seen:
+                continue
+            if self.proc.read_u32(ptr) != UNIT_VTABLE:
+                continue
+            if self.proc.read_u32(ptr + UNIT_OWNER_OFFSET) != obj:
+                continue                   # another player's, or Gaia's
+            seen.add(ptr)
+            out.append(ptr)
+            self.last_slot = off // ROSTER_STRIDE
         return out
 
     def type_name(self, unit: int) -> str | None:
@@ -145,8 +179,11 @@ class Roster:
 
     def counts(self) -> dict[str, int]:
         out: dict[str, int] = {}
+        self.unnamed = 0
         for unit in self.units():
             name = self.type_name(unit)
             if name:
                 out[name] = out.get(name, 0) + 1
+            else:
+                self.unnamed += 1
         return out

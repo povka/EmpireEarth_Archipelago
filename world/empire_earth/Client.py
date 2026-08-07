@@ -40,6 +40,7 @@ from .Obsolescence import Obsolescence
 from .TechEffects import TechEffects
 from .Items import (
     ITEM_ID_TO_BUILDING,
+    ITEM_ID_TO_WONDER,
     ITEM_ID_TO_EPOCH,
     ITEM_ID_TO_TECH,
     ITEM_ID_TO_RESOURCE,
@@ -48,10 +49,10 @@ from .Items import (
 from .Locations import (
     BUILD_LOCATION_BY_DBNAME,
     LOCATION_NAME_TO_ID,
-    PAIRED_LOCATIONS,
+    LOCATION_ALSO_SENDS,
     RECRUIT_LOCATION_BY_DBNAME,
     TECH_LOCATION_BY_NODE,
-    WONDER_LOCATION_BY_DBNAME,
+    WONDER_BY_DBNAME,
 )
 from .Technologies import TECHNOLOGIES, TECH_EFFECT_IDS
 from .Banner import Banner
@@ -126,6 +127,12 @@ class EmpireEarthCommandProcessor(ClientCommandProcessor):
             if name not in finished:
                 loc += "  [under construction]"
             self.output(f"  {n:3d}  {name:<32s} {loc}")
+        # Where the walk got to, so a unit missing from this list can be told
+        # apart from one the walk never reached.
+        total = sum(counts.values())
+        self.output(f"{total} objects to slot {ctx.roster.last_slot}"
+                    + (f", {ctx.roster.unnamed} with no readable type name"
+                       if ctx.roster.unnamed else ""))
 
     def _cmd_wonders(self):
         """Show which wonders you own and how the wonder goal is progressing."""
@@ -134,18 +141,23 @@ class EmpireEarthCommandProcessor(ClientCommandProcessor):
             self.output("Not attached / no memory profile.")
             return
         owned, finished = ctx.roster.survey()
-        # Every wonder has an id; only the ones the server knows about are
-        # actually in this seed.
-        in_seed = set(ctx.missing_locations) | set(ctx.checked_locations)
-        for db_name, loc in sorted(WONDER_LOCATION_BY_DBNAME.items()):
+        for db_name, display in sorted(WONDER_BY_DBNAME.items()):
             if db_name in finished:
                 have = "built"
             elif db_name in owned:
                 have = "under construction"
             else:
                 have = "-"
-            note = "" if LOCATION_NAME_TO_ID[loc] in in_seed else "  (not in this seed)"
-            self.output(f"  {loc[6:]:<26s} {have:<18s}{note}")
+            # A wonder is not a check, so there is no location to ask the
+            # server about. What decides whether you can raise one is the
+            # unlock item, when this seed gates them at all.
+            if not ctx.gates_buildings:
+                note = ""
+            elif display in ctx.unlocked_buildings:
+                note = "  (unlocked)"
+            else:
+                note = "  (locked - no Wonder: item yet)"
+            self.output(f"  {display:<26s} {have:<18s}{note}")
         if ctx.wonders_needed:
             self.output(
                 f"{ctx.wonders_built} of {ctx.wonders_needed} needed for the goal."
@@ -214,6 +226,7 @@ class EmpireEarthContext(CommonContext):
         self.unlocked_buildings: set[str] = set()
         self.gate: BuildingGate | None = None
         self.gates_buildings = False
+        self.gated_wonders: list[str] = []
         self.gate_announced = False
         # Research is state too: the whole researched set is read each poll and
         # compared against what has been sent.
@@ -294,6 +307,7 @@ class EmpireEarthContext(CommonContext):
             self.goal_kind = str(slot_data.get("goal", "reach_epoch"))
             self.wonders_needed = int(slot_data.get("wonders_needed", 0))
             self.gates_buildings = bool(slot_data.get("building_unlocks", False))
+            self.gated_wonders = list(slot_data.get("gated_wonders", []))
             self.tech_checks = bool(slot_data.get("technology_checks", False))
             self.defeat_reported = False
             self.ingame_messages = bool(
@@ -761,14 +775,19 @@ class EmpireEarthContext(CommonContext):
         """
         if not (self.gates_buildings and self.gate):
             return
+        # Wonders go through the same gate: the engine holds them behind the
+        # same `available` flag on the same kind of node, so the only
+        # difference is which item frees which. They are not checks, so nothing
+        # here reports one.
+        gated = tuple(LOCKABLE_BUILDINGS) + tuple(self.gated_wonders)
         self.unlocked_buildings = {
-            ITEM_ID_TO_BUILDING[i.item]
+            (ITEM_ID_TO_BUILDING.get(i.item) or ITEM_ID_TO_WONDER.get(i.item))
             for i in self.items_received
-            if i.item in ITEM_ID_TO_BUILDING
+            if i.item in ITEM_ID_TO_BUILDING or i.item in ITEM_ID_TO_WONDER
         }
-        locked, freed = self.gate.apply(self.unlocked_buildings, LOCKABLE_BUILDINGS)
+        locked, freed = self.gate.apply(self.unlocked_buildings, gated)
         if not self.gate_announced and (locked or freed):
-            missing = self.gate.missing(LOCKABLE_BUILDINGS)
+            missing = self.gate.missing(gated)
             if missing:
                 logger.warning(
                     "Building unlocks: no tech tree node found for "
@@ -864,24 +883,32 @@ class EmpireEarthContext(CommonContext):
     def locations_for(self, db_name: str) -> list[str]:
         """Every check this type name satisfies.
 
-        Matching is on the type name the game itself reports, so a unit
-        satisfies its own check - and, for the heroes, its counterpart's.
+        Matching is on the type name the game itself reports, so a unit always
+        satisfies its own check. Some also satisfy others, because the game
+        makes a unit unbuildable in two ways that a per-unit check cannot
+        survive on its own:
 
-        The two heroes of a tier are mutually exclusive: build Sargon of Akkad
-        and Gilgamesh can never exist in that match. One of the pair would
-        therefore be a check nobody could send, so recruiting either sends both.
+        * The two heroes of a tier are mutually exclusive - build Sargon of
+          Akkad and Gilgamesh can never exist in that match - so recruiting
+          either sends both.
+        * A unit is retired when a later tier replaces it, so a Slinger stops
+          being offered once Simple Bowmen arrive. The replacement carries the
+          replaced unit's check: a Simple Bowman sends Slinger's too, and a
+          Long Bow sends all four below it.
+
+        Both relations only ever *add* checks, which is what makes them safe:
+        an extra send costs a free check, while a missing one can leave a seed
+        unwinnable.
         """
         loc = BUILD_LOCATION_BY_DBNAME.get(db_name)
         if loc is not None:
-            return [loc]
-        loc = WONDER_LOCATION_BY_DBNAME.get(db_name)
-        if loc is not None:
-            return [loc]
+            # Buildings cascade too: a `Planets` map has a Space Dock where
+            # every other map has a Dock, so each sends the other's check.
+            return [loc, *LOCATION_ALSO_SENDS.get(loc, ())]
         recruit = RECRUIT_LOCATION_BY_DBNAME.get(db_name)
         if not recruit:
             return []
-        partner = PAIRED_LOCATIONS.get(recruit)
-        return [recruit, partner] if partner else [recruit]
+        return [recruit, *LOCATION_ALSO_SENDS.get(recruit, ())]
 
     def location_for(self, db_name: str) -> str | None:
         """The first check a type name satisfies, for the /roster display."""
@@ -900,7 +927,7 @@ class EmpireEarthContext(CommonContext):
             return
 
         self.wonders_built = sum(
-            1 for n in finished if n in WONDER_LOCATION_BY_DBNAME
+            1 for n in finished if n in WONDER_BY_DBNAME
         )
 
         # Everything is gated on completion. The roster lists an object from the

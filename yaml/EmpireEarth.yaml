@@ -94,4 +94,4 @@ Empire Earth:
   # Map Type is not on this list: the client cannot set it, so pick whichever
   # one you like on the setup screen.
 
-  bundle_size: 2500
+  bundle_size: 3500

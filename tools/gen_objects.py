@@ -18,23 +18,30 @@ Units are emitted twice over, because both views are needed:
   away - only the checks built on it have.
 * `UNIT_FAMILIES` and `UNIT_FAMILY_MIN_EPOCH` are that grouping.
 
-Two of the epochs here are not to be trusted. The database's epoch field reads
-high - one for most buildings, two for the Temple - so `BuildingEpochs.py`,
-generated from the running game's tech tree, overrides it. The unit epochs
-still come from here and carry the same skew; see notes/REVERSE.md for why they
-could not be corrected the same way.
+Reads the Art of Conquest database by default, because that is the edition the
+client attaches to and the Space Age is an expansion epoch. `--edition base`
+reads the original game's instead; the two ship a `data.ssa` each and the
+expansion's holds 848 object records against 724. See install.EDITIONS.
+
+Epochs need care. The database's field counts from 1 where this project counts
+from 0, and it reads high for buildings - one for most, two for the Temple - so
+`BuildingEpochs.py`, generated from the running game's tech tree, overrides it
+and a building with no measured epoch is not offered as a check at all. Unit
+epochs are corrected here instead; see unit_epoch.
 """
 
 from __future__ import annotations
 
 import argparse
 import os
+import re
 import struct
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from dbobjects import families, objects, record_name  # noqa: E402
-from ssa_extract import DEFAULT_SSA  # noqa: E402
+from ssa_extract import DEFAULT_SSA, SSA_BY_EDITION  # noqa: E402
+from install import DEFAULT_EDITION, EDITIONS  # noqa: E402
 
 FAMILY_OFF = 0x68
 # Category, and the earliest epoch the object can be built in. There is no
@@ -44,7 +51,12 @@ CATEGORY_OFF = 0x6C
 MIN_EPOCH_OFF = 0x70
 WONDER_CATEGORY = 28
 
-# Wonders are the one case where +0x70 does not match the game. It reads 1
+# Wonders take the same one-indexed correction as everything else, and then a
+# floor on top. Leaving the raw number in place put `Orbital Space Station` at
+# epoch 15 - one past the Space Age - so no seed could offer it, and it was
+# reported built in a Space Age match.
+#
+# The floor is the part that is not an off-by-one. It reads 1
 # (Stone Age) for six of the seven, but wonders cannot actually be built until
 # the Bronze Age. Established in game, not guessed:
 #
@@ -71,6 +83,7 @@ BUILDING_EXCLUDE_MARKERS = (
     " - ww1", " - ww2", " - digital", " - nano", " - space",
     "wall", "gate", "barbed", "obstacle", "runway", "improved",
     "aa10", "aa13", "steel mill",
+    "iwo jima",
     # The Farm is kept out by choice, not because it is a variant. It is the
     # one building with no tech tree node the client can reach - the only icon
     # mentioning a farm is `but_farm_15t`, an epoch 14 variant - so it can
@@ -94,6 +107,25 @@ NON_UNIT_FAMILIES = {
     "Ambient", "Towers", "Walls",
 }
 
+# Families Art of Conquest adds whose producer nothing shipped with the game
+# names. `technology_tree.pdf` predates the expansion, so its unit tables have
+# no heading for spaceships, and the building they come from - the Space Dock -
+# has no measured epoch either, because `gen_building_epochs.py` has only ever
+# been run against a base-game tech tree.
+#
+# Held back rather than guessed at. A wrong producer is the dangerous kind of
+# error here: it tells logic that a building you cannot use is good enough, and
+# `Producers.py` drops ambiguous labels for exactly that reason.
+#
+# What it costs is eight checks - three spaceships, three space fighters, a
+# space corvette and a campaign ICBM. What admits them is one run of
+# `tools/gen_building_epochs.py` against a live Art of Conquest match, plus a
+# producer for each family.
+NEEDS_MEASUREMENT_FAMILIES = {
+    # `cp ICBM` only - a campaign object with no build menu anywhere.
+    "ICBM",
+}
+
 # Records that sit in a unit family but are abilities rather than units, so
 # nothing can ever recruit one and a check for it could never be sent.
 # `Hurricane` and `Torpedo` are filed under Ship, `Anti Matter Storm` under
@@ -110,7 +142,24 @@ NON_UNIT_NAMES = {
 }
 
 
-def unit_epoch(raw: int) -> int:
+
+# `Arch02 - Slinger` -> 2, `Inf15 - Watchman` -> 15. The same one-indexed epoch
+# the database stores, written into the name.
+_NAME_TIER = re.compile(r"^[A-Za-z ]*?(\d+)\s*(?:-\s*)?.+$")
+
+
+def name_tier(name: str) -> int:
+    """The tier in a unit's name, or 0 when it has none to give.
+
+    Deliberately forgiving: `h1-14 Molly Ryan` reads as 1 and `Field Medic 13`
+    as nothing at all. Both are wrong, and neither matters, because this is
+    only ever used to raise a floor - see unit_epoch.
+    """
+    match = _NAME_TIER.match(name)
+    return int(match.group(1)) if match else 0
+
+
+def unit_epoch(raw: int, name: str = "") -> int:
     """The database's epoch field, as an index into EPOCH_NAMES.
 
     The field counts from 1 at the Prehistoric Age; the rest of this project
@@ -129,8 +178,30 @@ def unit_epoch(raw: int) -> int:
 
     Leaving the +1 in place is what made `Recruit Cataphract` a Middle Ages
     check when a Cataphract is a Dark Age unit.
+
+    The name's own tier is taken when it is *higher*, and only then. Three
+    records added by Art of Conquest store an epoch one below the tier they are
+    named for, and the direction is the dangerous one - a floor that reads low
+    lets generation hide an epoch item behind a check that needs it:
+
+        Inf15 - Watchman          stored 14, named 15, and the wiki agrees
+        14 Anti Missile Battery   stored 13, named 14
+        s11 LST Transport         stored 10, named 11
+
+    Taking the higher of the two can only ever over-state an epoch, which is
+    the side that costs a check rather than a run. It is also why the tier
+    parse is allowed to be sloppy: every name it misreads, it misreads low.
     """
-    return max(raw - 1, 0)
+    return max(raw, name_tier(name)) - 1 if max(raw, name_tier(name)) else 0
+
+
+# Where the database's name is not the game's. `w  Lighthouse at Alexandria`
+# is the Pharos Lighthouse - a wonder distinct from the Library of Alexandria,
+# which the database also carries - and the display name is what a player reads
+# in their item list, so it should be the one the game uses.
+DISPLAY_OVERRIDES = {
+    "Lighthouse at Alexandria": "Pharos Lighthouse",
+}
 
 
 def pretty(name: str) -> str:
@@ -138,7 +209,8 @@ def pretty(name: str) -> str:
     head, _, rest = name.partition(" ")
     if head in ("b", "w"):
         name = rest
-    return " ".join(name.split())
+    tidy = " ".join(name.split())
+    return DISPLAY_OVERRIDES.get(tidy, tidy)
 
 
 def wonders(ssa: str):
@@ -157,7 +229,8 @@ def wonders(ssa: str):
         if struct.unpack_from("<i", r, CATEGORY_OFF)[0] != WONDER_CATEGORY:
             continue
         epoch = struct.unpack_from("<i", r, MIN_EPOCH_OFF)[0]
-        out.append((i, name, pretty(name), max(epoch, WONDER_EPOCH_FLOOR)))
+        out.append((i, name, pretty(name),
+                    max(unit_epoch(epoch, name), WONDER_EPOCH_FLOOR)))
     return sorted(out, key=lambda t: t[1])
 
 
@@ -190,7 +263,7 @@ def build(ssa: str):
     unit_families = []
     members: list[tuple[str, str]] = []
     for idx, name in enumerate(fam):
-        if name in NON_UNIT_FAMILIES:
+        if name in NON_UNIT_FAMILIES or name in NEEDS_MEASUREMENT_FAMILIES:
             continue
         mine = [
             n for _i, n, f in recs
@@ -199,12 +272,12 @@ def build(ssa: str):
         if not mine:
             continue
         real = [
-            min_epoch.get(n, 0) for n in mine
+            (min_epoch.get(n, 0), n) for n in mine
             if min_epoch.get(n, 0) > 0 and not n.startswith("x ")
         ]
-        earliest = unit_epoch(min(real)) if real else 0
+        earliest = min(unit_epoch(e, n) for e, n in real) if real else 0
         unit_families.append((idx, name, len(mine), earliest))
-        members += [(n, name, unit_epoch(min_epoch.get(n, 0))) for n in mine]
+        members += [(n, name, unit_epoch(min_epoch.get(n, 0), n)) for n in mine]
     return buildings, unit_families, members
 
 
@@ -300,12 +373,18 @@ def emit(buildings, unit_families, members, wonder_list) -> str:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--ssa", default=DEFAULT_SSA)
+    ap.add_argument("--edition", choices=sorted(EDITIONS),
+                    default=DEFAULT_EDITION,
+                    help="which edition's database to read")
+    ap.add_argument("--ssa", help="an explicit path, overriding --edition")
     ap.add_argument("--write", action="store_true")
     args = ap.parse_args()
 
-    buildings, unit_families, members = build(args.ssa)
-    wonder_list = wonders(args.ssa)
+    ssa = args.ssa or SSA_BY_EDITION[args.edition]
+    print(f"reading {ssa}")
+    print()
+    buildings, unit_families, members = build(ssa)
+    wonder_list = wonders(ssa)
     print(f"{len(buildings)} buildings kept:")
     for i, raw, disp, epoch in buildings:
         print(f"   {i:4d}  epoch {epoch:2d}  {raw!r} -> {disp}")

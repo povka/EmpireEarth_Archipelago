@@ -49,6 +49,36 @@ TEXTURE_ALIASES = {
     "Cyber Laboratory": "but_mech laboratory",
     "Navy Yard": "but_naval yard",
     "Siege Factory": "but_siege workshop",
+
+    # Art of Conquest's own buildings, which drop the space the way the wonders
+    # do and carry an epoch suffix. Without these the tech tree sweep found no
+    # node for them, so they had no measured epoch and stayed out of the pool.
+    "Space Dock": "but_spacedock_15t",
+    "Space Turret": "but_turret_15t",
+
+    # The wonders. Not one of them follows the rule, which is why gating them
+    # first time out found no node for any of the nine and left them all
+    # buildable. Read out of `data.ssa`'s texture list rather than guessed:
+    # they drop spaces entirely, `Tower of Babylon` is stored the other way
+    # round, the Lighthouse is "of" Alexandria rather than "at", and the
+    # Coliseum's icon is misspelled with two Ls in the game's own assets.
+    "Coliseum": "but_colliseum",
+    "Ishtar gates": "but_ishtargates",
+    "Library of Alexandria": "but_libraryofalexandria",
+    "Pharos Lighthouse": "but_lighthouseofalexandria",
+    "Temple of Zeus": "but_templeofzeus",
+    "Time Machine": "but_timemachine",
+    "Tower of Babylon": "but_babylontower",
+    # Art of Conquest's, which do carry an epoch suffix like the unit icons.
+    "Orbital Space Station": "but_orbital_15t",
+    # `Future Research Sentinel` is deliberately absent. The only candidate is
+    # `but_sentinelmech_15t`, and `but_sentinel_00t` belongs to something else
+    # - probably the Sentinel infantry - so the pair cannot be told apart from
+    # the names alone. A wrong icon here does not fail loudly: it would gate
+    # whatever that node really is, and if that turned out to be a unit, its
+    # check would sit behind a wonder item and could strand a seed. One wonder
+    # staying buildable is the cheaper mistake, and the client names it in the
+    # "no tech tree node found" line.
 }
 
 # BuildingEpochs.py is generated from this very field, so a node for the right

@@ -1212,10 +1212,10 @@ nothing is ever withdrawn. Verified in a live match: a Rock Thrower survived
 Stone -> Copper -> Bronze, and 0 of 778 nodes were left retirable. The checks
 are ordinary progression checks now.
 
-> **This is only half true, and the other half is a live bug.** Clearing
-> `+0x05` does not preserve an old unit beside its replacement - it cancels the
-> upgrade. See "Clearing `+0x05` cancels the upgrade" below before trusting
-> anything in this section.
+> **Half of this was wrong and is now fixed.** Clearing `+0x05` did not
+> preserve an old unit beside its replacement, it cancelled the upgrade. Only
+> the expiry `+0x18` is cleared now, and a replacement carries the replaced
+> unit's check. See "Clearing `+0x05` cancels the upgrade" below.
 
 Two bugs came out of the first two-player run, and both were about which units
 exist rather than about the memory work:
@@ -1237,7 +1237,7 @@ caught it, but that test reads `LOCATION_MIN_EPOCH` - the same table that was
 wrong. `tools/test_generation.py` now also checks the floors against
 `data.ssa` directly, which is the only reading a wrong table cannot pass.
 
-### Clearing `+0x05` cancels the upgrade - OPEN, and it breaks seeds
+### Clearing `+0x05` cancels the upgrade - FIXED
 
 Observed in play: upgrade a Slinger to a Simple Bowman, advance one more epoch,
 and the Archery Range is offering **Slingers again**.
@@ -1259,14 +1259,15 @@ replacement's own check cannot be sent, and per-unit checks hold progression -
 so a seed can be left unfinishable. It is the same severity as
 `Epoch: Bronze Age` on `Build Siege Factory`, arriving by a different route.
 
-#### The fix, and why it cannot be written yet
+#### The fix
 
 The right shape is to stop fighting the engine: leave `+0x05` alone, let
 upgrades happen, and make **recruiting a unit send the checks for everything it
 supersedes** - build a Simple Bowman and Slinger's check goes too.
 
-That needs a table of which unit supersedes which. **The repo does not have
-one, and nothing shipped with the game yields it reliably.**
+That needs a table of which unit supersedes which. `tools/gen_upgrades.py`
+builds it, and `Locations.LOCATION_ALSO_SENDS` is the result: 118 of the 215
+units carry at least one other check.
 
 *Family is not the chain.* `Human` holds `Domestic Wolf`, `Inf01 - Rock
 Thrower`, `Prophet`, three Field Medics and several separate infantry lines.
@@ -1299,41 +1300,116 @@ governs most of the check pool.
 Errors are survivable in one direction only. That argues against a tight
 heuristic and in favour of finding the real relation.
 
-#### Where to look first: `dbobjects.dat`
+#### `dbobjects.dat` does not hold it - ruled out
 
-A record is **1948 bytes** and this project has identified about six fields. An
-"upgrades to" object index is exactly the sort of thing that would live in one,
-and `+0x74` already gives every record its own index, so a link would be
-immediately recognisable.
+A record is 1948 bytes and an "upgrades to" object index was the obvious thing
+to look for. It is not there. Scanning `Arch03 - Simple Bowman`'s record for
+`Arch02 - Slinger`'s index, and repeating for Clubman/Maceman,
+Horseman/Cataphract, Spearman/Phalanx and Simple Bowman/Composite Bow, finds no
+offset that holds for more than one pair:
 
-The test is mechanical and needs only `data.ssa`:
+```
+Simple Bowman  holds Slinger's index at:      (nowhere)
+Maceman        holds Clubman's index at:      [568]
+Cataphract     holds Horseman's index at:     (nowhere)
+Phalanx        holds Spearman's index at:     [192, 552]
+Composite Bow  holds Simple Bowman's index:   [560]
+```
 
-1. Take `Arch02 - Slinger`'s record, scan its 1948 bytes for a dword equal to
-   `Arch03 - Simple Bowman`'s index.
-2. Check the same offset holds Maceman's index in `Inf01 - Clubman`'s record,
-   and Cataphract's in `Cav03 - Horseman`'s.
+Offsets common to every pair: none. The scattered hits are small integers that
+happen to collide. One run ruled the field out, the same way `+0x404` was
+pinned for Victory Allowed - only negative.
 
-Three agreements pin it, the same way `+0x404` was pinned for Victory Allowed.
-If the field is not there, one run has ruled it out.
+#### What was used instead: tiers, with a role split
 
-Two fallbacks, in order of preference:
+The names carry a tier. `Arch02`, `Arch03`, `Arch05`, `Arch06` - and the number
+is the epoch, counted from 1, the same numbering the PDF prints. Group by
+(family, name prefix), order by tier, and a unit supersedes every **strictly
+lower** tier in its group.
 
-* **Read it from the live game.** The engine sets `+0x05` on the superseded
-  node at the epoch transition, so the client could watch which nodes are
-  retired and pair them with what appeared. Exact and self-maintaining; needs
-  the pairing handle found first - `node+0x10`'s `EEButtonObject` is the
-  obvious candidate, since an upgrade plausibly reuses the build-menu slot.
-* **Name heuristic plus a manual correction table** for the twenty ambiguous
-  groups. Works with no game at all, but it is a guess spread over 118 checks,
-  in a place where guessing wrong is unwinnable.
+Strictly lower handles same-tier alternatives for free: two units at one tier
+never send each other.
 
-#### Interim safety, if the chain is still unknown
+What it cannot see is a unit that is a **line unto itself** while sitting at an
+ordinary tier. `Arch05 - Cross Bow` shares the Dark Age with `Arch05 -
+Composite Bow`, so those two were already kept apart - but `Arch06 - Long Bow`
+sits above both and was sending Cross Bow's check as if it were the next rung.
+The game's wiki is explicit: the Archery Range "has only five different unit
+lines", the Archer line "starts in the Stone age with the Slinger ... and it
+ends with Long Bow in the Middle Ages", and "The Crossbow is the only of its
+line". Those go in `STANDALONE_UNITS`, which is the one edit that can *remove*
+a link and so needs a source rather than a hunch.
 
-Stop clearing `+0x05` and demote unit checks to non-progression again. The game
-then behaves correctly and no seed can be broken; the cost is that unit checks
-stop carrying anything, which is where they were before this section was
-written. Worth taking if the chain hunt stalls - a correct game with weaker
-checks beats a seed that cannot be finished.
+The same page confirms the rest of that building's lines came out right on
+tiers alone - Javelin to Pilum, Chariot Archer to Cavalry Archer, Elephant
+Archer alone - which is four of its five lines derived correctly and one
+corrected by hand.
+
+Only one group genuinely bundles separate lines, and it is the one flagged
+earlier: `Ship`, whose 27 units split cleanly on a role word.
+
+```
+Fishing Boat    Stone -> Bronze -> Imperial -> Modern -> Digital
+Frigate         Stone [War Raft] -> Copper -> Bronze -> Byzantine -> Middle Age
+                -> Renaissance -> Imperial -> Royal -> Good Hope -> Juggernaut
+Transport       Stone -> Copper -> Bronze -> Imperial -> Atomic Age -> Gargantua
+Catapult Ship   Bronze -> Middle Age
+Cruiser         Gunboat -> Cruiser -> Sagitarian
+```
+
+`Ram / Siege` splits the same way into Ram and Tower. Nothing else needed it.
+
+#### The one rule that keeps this safe
+
+Splitting a group is the dangerous operation, because a split is what creates a
+missing link, and a missing link is the unwinnable direction. So a member whose
+role word is not recognised is **not** given a line of its own - it stays in
+the bundle, superseded by every higher tier in the group whatever their role.
+
+`s11 Warrington` was the case this was written for: the only frigate not named
+"Frigate", so it matched no role word and sent 21 checks across frigates,
+transports and fishing boats alike. Wrong, but harmless, and the fallback did
+its job - the alternative, guessing it into a line, is what breaks seeds.
+
+The wiki then named it outright: "upgrades from Frigate - Good Hope, upgrades
+to Frigate - Juggernaut", exactly where its tier already sat. It now carries
+nine, and the whole eleven-rung frigate chain the wiki lists - War Raft,
+Copper, Bronze, Byzantine, Middle Ages, Renaissance, Imperial, Royal, Good
+Hope, Warrington, Juggernaut - matches what the tiers derived.
+
+#### What tiers cannot see, and where the corrections went
+
+Two kinds of error survive a tier-ordered rule, and both need an outside
+source:
+
+* **A unit that is a line unto itself** while sitting at an ordinary tier.
+  `Arch05 - Cross Bow` ("The Crossbow is the only of its line") was being
+  carried by the Long Bow above it. So were `Inf01 - Rock Thrower`,
+  `Inf09 - Partisan` and `Inf11 - Flame Thrower`, by every later unit sharing
+  their family. These go in `STANDALONE_UNITS`.
+* **A unit whose line the name does not spell out.** `s11 Warrington`, and the
+  whole of the late `Human` / `Inf` group, in `ROLE_OVERRIDES`.
+
+That last group is the worst case the tier rule meets. Ten units share a family
+and a prefix, spanning tiers 1 to 12, and it read them as a single ladder from
+Rock Thrower to Heavy Mortar. They are actually four short lines and three
+units that stand alone:
+
+```
+Sharpshooter -> Sniper
+Hand Cannoneer -> Trench Mortar -> Heavy Mortar
+Grenade Launcher -> Bazooka Infantry
+Rock Thrower, Partisan, Flame Thrower    (replaced by nothing)
+```
+
+Not one of those links is visible in the names, and the tier ordering is
+consistent with every one of them - which is the point: a tier tells you what
+*could* be an upgrade, never what is.
+
+Both lists *remove* links, which is the direction that can strand a seed, so an
+entry needs a citation rather than a hunch. Everything else on the two pages
+consulted so far came out of the tiers correctly - Javelin to Pilum, Chariot
+Archer to Cavalry Archer, Elephant Archer alone, and every frigate.
 
 ### Unit epochs: settled by the shipped PDF
 

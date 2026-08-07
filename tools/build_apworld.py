@@ -27,6 +27,7 @@ afternoon once.
     3. the data modules import for real, with Archipelago's own modules stubbed
     4. no two checks, and no two items, share an id
     5. nothing needs a Python newer than 3.11, the oldest Archipelago supports
+    6. no name is read that nothing binds
 
 Check 3 catches a data table changing shape, such as adding a field to
 `TECHNOLOGIES` while another module still unpacks the old arity. Check 4 exists
@@ -37,8 +38,10 @@ All of them cover the `test` package as well, even though it is deliberately
 left out of the packaged apworld. Checking only what ships is how the tests
 came to import a name that had been deleted, with nothing to say so.
 
-What none of them catch is a name used inside a function but never imported;
-that only shows up at runtime.
+Check 6 closes what used to be the admitted gap here - a name used inside a
+function but never imported. `__init__.py` cannot be imported by check 3,
+because it pulls in Archipelago itself, so `LocationProgressType.EXCLUDED`
+compiled, passed everything, and failed at generation.
 """
 
 from __future__ import annotations
@@ -286,6 +289,66 @@ def check_ids() -> list[str]:
     return bad
 
 
+def check_undefined_names() -> list[str]:
+    """Names read but never bound anywhere that could reach them.
+
+    This is the gap the other checks admit to leaving. `__init__.py` cannot be
+    imported here - it pulls in Archipelago itself - so a name used in it and
+    never imported compiles, passes every check, and fails at generation:
+
+        location.progress_type = LocationProgressType.EXCLUDED
+        NameError: name 'LocationProgressType' is not defined
+
+    It is a scope walk rather than a real type check: collect what each scope
+    binds, then flag loads that no enclosing scope, the module, or builtins can
+    satisfy. Attributes are not followed, so `Foo.bar` only ever asks about
+    `Foo`, which keeps it to the one question it can answer honestly.
+    """
+    import builtins
+
+    bad: list[str] = []
+
+    def bound_by(node: ast.AST) -> set[str]:
+        """Every name this statement binds, wherever it appears in it."""
+        out: set[str] = set()
+        for sub in ast.walk(node):
+            if isinstance(sub, (ast.Import, ast.ImportFrom)):
+                out.update(a.asname or a.name.split(".")[0] for a in sub.names)
+            elif isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef,
+                                  ast.ClassDef)):
+                out.add(sub.name)
+            elif isinstance(sub, ast.Name) and isinstance(sub.ctx, ast.Store):
+                out.add(sub.id)
+            elif isinstance(sub, ast.arg):
+                out.add(sub.arg)
+            elif isinstance(sub, ast.ExceptHandler) and sub.name:
+                out.add(sub.name)
+            elif isinstance(sub, ast.Global):
+                out.update(sub.names)
+        return out
+
+    for path in all_sources():
+        tree = ast.parse(open(path, encoding="utf-8").read(), path)
+        module_scope = bound_by(tree) | set(dir(builtins)) | {
+            "__file__", "__name__", "__doc__", "__package__",
+        }
+
+        def visit(node: ast.AST, scope: set[str]) -> None:
+            for child in ast.iter_child_nodes(node):
+                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef,
+                                      ast.ClassDef, ast.Lambda)):
+                    visit(child, scope | bound_by(child))
+                elif isinstance(child, ast.Name) and isinstance(child.ctx, ast.Load):
+                    if child.id not in scope:
+                        bad.append(f"{rel(path)}:{child.lineno}: "
+                                   f"{child.id!r} is not defined or imported")
+                else:
+                    visit(child, scope)
+
+        visit(tree, module_scope)
+    return bad
+
+
 def build(target: str) -> tuple[int, int]:
     tmp = target + ".new"
     count = 0
@@ -321,7 +384,8 @@ def main():
                             ("imports", check_internal_imports()),
                             ("data modules", check_data_modules()),
                             ("ids", check_ids()),
-                            ("python 3.11", check_python_311())):
+                            ("python 3.11", check_python_311()),
+                            ("undefined names", check_undefined_names())):
         if problems:
             print(f"{label}:")
             for line in problems:

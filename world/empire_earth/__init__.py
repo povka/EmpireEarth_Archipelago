@@ -1,4 +1,4 @@
-from BaseClasses import Region, Tutorial
+from BaseClasses import LocationProgressType, Region, Tutorial
 from Options import OptionError
 from worlds.AutoWorld import WebWorld, World
 from worlds.LauncherComponents import Component, Type, components, launch_subprocess
@@ -7,6 +7,7 @@ from .Items import (
     BUILDING_PREREQS,
     TECH_ITEMS,
     building_item,
+    wonder_item,
     ITEM_NAME_TO_ID,
     ITEM_TABLE,
     LOCKABLE_BUILDINGS,
@@ -16,8 +17,12 @@ from .Items import (
 from .Locations import (
     ALWAYS_LOCATIONS,
     RECRUIT_LOCATION_PRODUCERS,
+    building_terrains,
+    wonder_terrains,
+    NO_PROGRESSION_LOCATIONS,
     LOCATION_MIN_EPOCH,
     LOCATION_NAME_TO_ID,
+    EXCLUDED_TECHNOLOGIES,
     TECH_LOCATION_BUILDING,
     TECH_LOCATIONS,
     WONDER_MIN_EPOCH,
@@ -96,21 +101,47 @@ class EmpireEarthWorld(World):
         )
 
     @property
+    def terrain(self) -> str:
+        """The map the player says they will play; see Options.MapTerrain.
+
+        Nothing verifies it. The client forces map size but never map choice,
+        so this is the seed taking the player's word - and everything the
+        terrain decides is filtered through it, so a wrong answer here shows up
+        as checks that cannot be sent rather than as anything subtler.
+        """
+        return self.options.map_terrain.current_key
+
+    def on_this_map(self, name: str) -> bool:
+        """Is this check's building - or its unit's producer - on this map?"""
+        if name.startswith("Build "):
+            return self.terrain in building_terrains(name[len("Build "):])
+        if name.startswith("Recruit "):
+            producers = RECRUIT_LOCATION_PRODUCERS.get(name, ())
+            # No producer recorded means nothing terrain-specific is known, so
+            # the check stands; a unit with producers needs one of them here.
+            return not producers or any(
+                self.terrain in building_terrains(b) for b in producers)
+        return True
+
+    @property
     def gates_buildings(self) -> bool:
         return bool(self.options.building_unlocks.value)
 
     def unlock_items(self) -> list[str]:
-        """`Building:` items this seed uses.
+        """`Building:` and `Wonder:` items this seed uses.
 
-        A building whose epoch is past the goal can never be built, so an
-        unlock for it would be an item that does nothing.
+        Anything whose epoch is past the goal can never be built, so an unlock
+        for it would be an item that does nothing.
+
+        Wonders are gated by the same option and are not checks: building one
+        sends nothing, so the item is the whole of the reward.
         """
         if not self.gates_buildings:
             return []
         return [
             building_item(b) for b in LOCKABLE_BUILDINGS
             if LOCATION_MIN_EPOCH.get(f"Build {b}", 0) <= self.goal_epoch
-        ]
+        ] + [wonder_item(w) for w in self.usable_wonders()]
 
     def researchable(self, epoch: int) -> bool:
         """Is this epoch's technology part of the seed?
@@ -137,6 +168,10 @@ class EmpireEarthWorld(World):
             name for name in TECH_ITEMS
             if self.researchable(LOCATION_MIN_EPOCH.get(
                 f"Research {name[len('Tech: '):]}", 0))
+            # One item per technology check, so a technology the seed does not
+            # offer must not leave its item behind - the pool would no longer
+            # balance against the locations.
+            and name[len("Tech: "):] not in EXCLUDED_TECHNOLOGIES
         ]
 
     def buildings_needed_for(self, name: str) -> list[tuple[str, list[str]]]:
@@ -201,21 +236,43 @@ class EmpireEarthWorld(World):
             self.options.goal.option_either,
         )
 
-    def wonder_locations(self) -> list[str]:
+    def usable_wonders(self) -> list[str]:
         """Wonders this seed can actually build, earliest-available first.
 
         A wonder cannot be built before its own epoch and the client caps the
-        match at the goal epoch, so anything above the goal is left out rather
-        than shipped as a check nobody can send.
+        match at the goal epoch, so anything above the goal is left out - there
+        is no point offering an unlock for something nobody can raise.
+
+        Unlike the buildings, this does not depend on the goal: a wonder is
+        buildable in any seed, and gating one is worth doing whether or not the
+        run ends by building them.
         """
-        if not self.wants_wonders:
-            return []
         usable = [
             (epoch, name)
             for name, epoch in WONDER_MIN_EPOCH.items()
             if epoch <= self.goal_epoch
+            and self.terrain in wonder_terrains(name)
         ]
         return [name for _epoch, name in sorted(usable)]
+
+    def wonder_options(self) -> list[tuple[int, list[str]]]:
+        """Wonders this seed can *guarantee*, as (epoch, unlocks needed).
+
+Substituted wonders need no special case here, because `map_terrain`
+        already said which of a pair this match has: a space map offers the
+        Orbital Space Station and not the Pharos Lighthouse, and neither is
+        counted on a map that cannot raise it.
+
+        This is what the goal counts and what `generate_early` measures a
+        `wonders_for_victory` against, so the two can never disagree - they did
+        once, and the seed generated with a goal nothing could satisfy.
+        """
+        out: list[tuple[int, list[str]]] = []
+        for name in self.usable_wonders():
+            epoch = WONDER_MIN_EPOCH[name]
+            unlocks = [wonder_item(name)] if self.gates_buildings else []
+            out.append((epoch, unlocks))
+        return out
 
     def generate_early(self) -> None:
         from .Epochs import EPOCH_NAMES
@@ -244,7 +301,7 @@ class EmpireEarthWorld(World):
                 "to 0, or pick the 'wonder_victory' or 'either' goal."
             )
 
-        available = len(self.wonder_locations())
+        available = len(self.wonder_options())
         if self.wants_wonders and self.wonders_needed > available:
             raise OptionError(
                 f"Empire Earth: wonders_for_victory is {self.wonders_needed} "
@@ -273,9 +330,13 @@ class EmpireEarthWorld(World):
         for name, loc_id in LOCATION_NAME_TO_ID.items():
             if name not in wanted:
                 continue
-            empire.locations.append(
-                EmpireEarthLocation(self.player, name, loc_id, empire)
-            )
+            location = EmpireEarthLocation(self.player, name, loc_id, empire)
+            # Some checks are real but not guaranteed available: a unit only
+            # one civilisation can field, or a building nobody has yet seen in
+            # a build menu. Nothing the seed needs may rest on those.
+            if name in NO_PROGRESSION_LOCATIONS:
+                location.progress_type = LocationProgressType.EXCLUDED
+            empire.locations.append(location)
         self.multiworld.regions.append(empire)
 
     def create_item(self, name: str) -> EmpireEarthItem:
@@ -322,13 +383,15 @@ class EmpireEarthWorld(World):
         wanted = {
             name for name in ALWAYS_LOCATIONS
             if LOCATION_MIN_EPOCH.get(name, 0) <= self.goal_epoch
+            and self.on_this_map(name)
         }
         if self.options.technology_checks.value:
             wanted |= {
                 name for name in TECH_LOCATIONS
                 if self.researchable(LOCATION_MIN_EPOCH.get(name, 0))
+                and name[len("Research "):] not in EXCLUDED_TECHNOLOGIES
             }
-        return wanted | set(self.wonder_locations())
+        return wanted
 
     def set_rules(self) -> None:
         from worlds.generic.Rules import set_rule
@@ -377,16 +440,35 @@ class EmpireEarthWorld(World):
                 lambda state, item=goal_item: state.has(item, self.player)
             )
         if self.wants_wonders:
-            # Building N wonders needs whichever epoch the Nth-earliest of them
-            # becomes available in - nothing else gates them.
-            usable = self.wonder_locations()
-            deepest = max(
-                WONDER_MIN_EPOCH[n] for n in usable[: self.wonders_needed]
-            )
-            needed = self.epoch_items_up_to(deepest)
-            conditions.append(
-                lambda state, n=needed: state.has_all(n, self.player)
-            )
+            # A wonder needs its epoch and, when gating is on, its unlock. Any
+            # N of them will do, so the condition counts rather than naming
+            # which - the fill decides which unlocks a run actually finds, and
+            # requiring a particular set would be wrong in both directions.
+            # One entry per wonder a run could raise, with a substituted pair
+            # collapsed into one. The pair needs *both* unlocks and the later
+            # of the two epochs: the seed does not know which map the player
+            # will pick, so it can only count the pair when either outcome is
+            # covered. That is the conservative side - it can refuse a goal
+            # that would have been reachable, never accept one that is not.
+            wanted_wonders = [
+                (self.epoch_items_up_to(epoch), unlocks)
+                for epoch, unlocks in self.wonder_options()
+            ]
+
+            def enough_wonders(state, need=self.wonders_needed,
+                               options=wanted_wonders) -> bool:
+                built = 0
+                for epochs, unlocks in options:
+                    if not state.has_all(unlocks, self.player):
+                        continue
+                    if not state.has_all(epochs, self.player):
+                        continue
+                    built += 1
+                    if built >= need:
+                        return True
+                return False
+
+            conditions.append(enough_wonders)
 
         self.multiworld.completion_condition[self.player] = (
             lambda state: any(c(state) for c in conditions)
@@ -430,6 +512,12 @@ class EmpireEarthWorld(World):
             "force_peace": self.options.opponents.value
             == self.options.opponents.option_allied,
             "building_unlocks": self.gates_buildings,
+            # Which wonders this seed actually gates. The client cannot work
+            # this out: it knows every wonder, but a seed only ships unlock
+            # items for those its goal epoch can reach, and gating one whose
+            # item can never arrive would lock it for the whole run with no
+            # way to open it.
+            "gated_wonders": self.usable_wonders() if self.gates_buildings else [],
             "technology_checks": bool(self.options.technology_checks.value),
             "wonders_needed": self.wonders_needed if self.wants_wonders else 0,
             "match_settings": self.match_settings(),

@@ -17,24 +17,24 @@ The engine decides this in `EETechTreeNode` vtable[2], `0x005CF742`:
     jge  not_obsolete
     obsolete: return 1
 
-So there are two ways to be retired, and both have to go: clear `+0x05`, and
-set `+0x18` to 15, which is the value units that never expire already carry.
-The availability predicate calls this, so a node that is never obsolete stays
-in its build menu for the rest of the match.
+So there are two ways to be retired - and only one of them is this module's
+business, which took a bug to establish. The two fields are not the same kind
+of thing:
 
-OPEN BUG - do not treat the paragraph above as correct. The two fields are not
-the same kind of thing. `+0x18` is an expiry date and clearing it is right;
-`+0x05` is the engine's record that a **specific later unit has replaced this
-one**, and clearing that does not preserve the old unit beside its replacement,
-it cancels the upgrade. Observed in play: a Slinger upgraded to a Simple Bowman
-is offered as a Slinger again one epoch later, which also means the Simple
-Bowman's check can no longer be sent - and per-unit checks hold progression, so
-a seed can be left unfinishable.
+    +0x18   an expiry date: "no longer offered after epoch N"
+    +0x05   a replacement: "this specific later unit has taken over"
 
-The fix is to leave `+0x05` alone and have a recruited unit send the checks for
-everything it supersedes, which needs an upgrade-chain table the project does
-not have yet. See "Clearing `+0x05` cancels the upgrade" in notes/REVERSE.md
-for the evidence, the options, and where to look for the chain.
+Clearing the expiry is right, and is what keeps a Rock Thrower recruitable for
+the whole match. Clearing the replacement is not: it does not preserve the old
+unit beside its successor, it *cancels the upgrade*. Observed in play - upgrade
+a Slinger to a Simple Bowman, advance one more epoch, and the Archery Range is
+offering Slingers again. That also left the Simple Bowman's own check
+unsendable, and unit checks carry progression, so it could strand a seed.
+
+So only `+0x18` is written now. Units still get replaced, exactly as the game
+intends, and the check that would have been lost is carried by the replacement
+instead: recruiting a Simple Bowman sends Slinger's check too
+(`Locations.LOCATION_ALSO_SENDS`, built by tools/gen_upgrades.py).
 
 This needs no name for anything. Every node on the local player's tree is
 written, which sidesteps the problem that only 43 of 178 units can be tied to a
@@ -98,15 +98,14 @@ class Obsolescence:
         return found
 
     def apply(self) -> int:
-        """Clear both retirement paths on every node.
+        """Clear the expiry on every node, leaving replacements alone.
 
         Returns how many nodes were changed *by this call* - zero when the
         epoch has not moved since the last one.
 
         Redone whenever the epoch changes, not just once per match. The engine
-        sets `+0x05` as you cross an epoch - that is how a Rock Thrower stops
-        being offered on leaving the Copper Age - so writing once at match start
-        would only postpone the problem to the next advance.
+        sets these as you cross an epoch, so writing once at match start would
+        only postpone the problem to the next advance.
 
         The node addresses are swept once and reused, so a re-apply is a few
         hundred small writes rather than another pass over the heap.
@@ -124,19 +123,12 @@ class Obsolescence:
 
         changed = 0
         for addr in self._nodes:
-            node = self.proc.read(addr + NODE_SUPERSEDED, 1)
             expires = self.proc.read_i32(addr + NODE_OBSOLETE_AFTER)
-            if node is None or expires is None:
+            if expires is None or expires >= NEVER:
                 continue
-            if not node[0] and expires >= NEVER:
-                continue
-            ok = True
-            if node[0]:
-                ok &= bool(self.proc.write(addr + NODE_SUPERSEDED, b"\x00"))
-            if expires < NEVER:
-                ok &= bool(self.proc.write(
-                    addr + NODE_OBSOLETE_AFTER, struct.pack("<i", NEVER)))
-            if ok:
+            # `+0x05` is deliberately not touched; see the module docstring.
+            if self.proc.write(addr + NODE_OBSOLETE_AFTER,
+                               struct.pack("<i", NEVER)):
                 changed += 1
 
         self._tree = tree

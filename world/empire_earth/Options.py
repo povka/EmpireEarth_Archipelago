@@ -15,7 +15,7 @@ class BundleSize(Range):
     display_name = "Resource Bundle Size"
     range_start = 50
     range_end = 10000
-    default = 2500
+    default = 3500
 
 
 class ApplyInGameWin(DefaultOnToggle):
@@ -77,6 +77,39 @@ class Opponents(Choice):
     display_name = "Opponents"
     option_allied = 0
     option_hostile = 1
+    default = 1
+
+
+class MapTerrain(Choice):
+    """
+    What kind of map you intend to play. The seed builds its logic around it.
+
+    Empire Earth decides some of your build menu from the terrain, and this is
+    the one thing a seed cannot see for itself - map choice is left to you, so
+    you have to tell it. Pick the wrong one and checks in the seed may be
+    impossible to send, which can strand a run.
+
+    `land_and_water` is the ordinary case. Docks and Navy Yards exist, and so
+    does everything they build - frigates, transports, battleships, galleys,
+    submarines and carriers.
+
+    `land_only` is a map with no water at all. There is no Dock and no Navy
+    Yard, so no ship of any kind is buildable, and none of them appears in the
+    seed.
+
+    `space` is a Planets map. It substitutes rather than adds: a Space Dock
+    stands where the Dock would be, a Space Turret where the Navy Yard would,
+    and an Orbital Space Station where the Pharos Lighthouse would. The ships
+    are gone and the Space Dock's own craft take their place.
+
+    Start a match that matches what you picked. Nothing enforces it, because
+    the client does not choose your map - it only believes you.
+    """
+
+    display_name = "Map Terrain"
+    option_land_only = 0
+    option_land_and_water = 1
+    option_space = 2
     default = 1
 
 
@@ -342,6 +375,7 @@ class EmpireEarthOptions(PerGameCommonOptions):
     lock_speed: LockSpeed
     prevent_match_end: PreventMatchEnd
     opponents: Opponents
+    map_terrain: MapTerrain
     ingame_messages: InGameMessages
     apply_ingame_win: ApplyInGameWin
     bundle_size: BundleSize

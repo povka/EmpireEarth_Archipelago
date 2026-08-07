@@ -33,6 +33,30 @@ CANDIDATE_ROOTS = [
 AOC = "Empire Earth - The Art of Conquest"
 BASE = "Empire Earth"
 
+# The two editions ship a `data.ssa` each, in their own folder. They are not
+# versions of one file - each is the database for its own executable - so which
+# one a tool reads has to be a decision, not a default nobody looked at.
+EDITIONS = {
+    "aoc": AOC,
+    "base": BASE,
+}
+
+# Art of Conquest. The client attaches to `EE-AOC.exe`, the world offers the
+# Space Age as a goal, and the Space Age is an Art of Conquest epoch - so this
+# is the edition the project describes.
+#
+# Reading the base game's by default was a real bug. Its archive is four times
+# the size (163 MB against 45 MB) because it carries the shared assets, which
+# made it look like the complete one, but its object database is the smaller of
+# the two: 724 records against 848. Everything the expansion adds was therefore
+# missing from the generated tables - `Inf15 - Watchman`, `Inf15 - Cyber Ninja`,
+# five kinds of spaceship, the Space Dock, the Teleporter, and the Orbital
+# Space Station wonder - so a Space Age seed contained no Space Age content.
+#
+# `base` stays here rather than being deleted: supporting the original game is
+# on the roadmap, and it needs its own tables generated from its own database.
+DEFAULT_EDITION = "aoc"
+
 
 def _looks_like_install(root: str) -> bool:
     return bool(root) and os.path.isfile(os.path.join(root, AOC, "EE-AOC.exe"))
@@ -70,13 +94,19 @@ def engine_dll(root: str = "") -> str:
     return os.path.join(find_root(root), AOC, "Low-Level Engine.dll")
 
 
-def data_ssa(root: str = "", aoc: bool = False) -> str:
-    """The archive holding the object database and assets.
+def data_ssa(root: str = "", edition: str = DEFAULT_EDITION) -> str:
+    """The archive holding an edition's object database and assets.
 
-    The base game's is the big one and is what the object tables were generated
-    from; the Art of Conquest folder has a smaller one of its own.
+    Defaults to Art of Conquest; pass `edition="base"` for the original game.
+    See EDITIONS above for why this is a choice rather than a default.
     """
-    return os.path.join(find_root(root), AOC if aoc else BASE, "Data", "data.ssa")
+    folder = EDITIONS.get(edition)
+    if folder is None:
+        raise SystemExit(
+            f"unknown edition {edition!r}; expected one of "
+            f"{', '.join(sorted(EDITIONS))}"
+        )
+    return os.path.join(find_root(root), folder, "Data", "data.ssa")
 
 
 if __name__ == "__main__":

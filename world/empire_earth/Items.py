@@ -61,9 +61,11 @@ ITEM_ID_TO_EPOCH = {
 }
 
 try:
-    from .Objects import BUILDINGS
+    from .Objects import BUILDINGS, WONDERS
+    from .BuildingEpochs import BUILDING_EPOCH
 except ImportError:  # loaded as a top-level module by tools/
-    from Objects import BUILDINGS
+    from Objects import BUILDINGS, WONDERS
+    from BuildingEpochs import BUILDING_EPOCH
 
 # Buildings that cannot be gated, and why:
 #
@@ -89,8 +91,24 @@ BUILDING_PREREQS: dict[str, str] = {
 _ALL_BUILDINGS: tuple[str, ...] = tuple(
     display for _raw, display in sorted(BUILDINGS.items())
 )
+# Gated buildings. Restricted to those with an epoch measured from the running
+# game's tech tree, because an unlock for anything else is an item that gates
+# nothing: the client finds a building's node by icon and its epoch is what
+# says where the check sits, and neither exists for a building the tech tree
+# sweep has never seen. Art of Conquest adds ten such - Space Dock, Teleporter,
+# and the rest - and without this they arrived as progression items that did
+# nothing while taking places in the pool from items that do.
+# Buildings a map substitutes for another are not gated. Whether a match has a
+# Dock or a Space Dock is decided by the map, which the seed never chose, so an
+# unlock naming one of them would gate a building half of all matches do not
+# have. The pair still sends both checks; see Locations.BUILDING_PAIRS.
+MAP_SUBSTITUTE_BUILDINGS = frozenset({"Space Dock", "Space Turret"})
+
 LOCKABLE_BUILDINGS: tuple[str, ...] = tuple(
-    b for b in _ALL_BUILDINGS if b not in ALWAYS_BUILDABLE
+    b for b in _ALL_BUILDINGS
+    if b not in ALWAYS_BUILDABLE
+    and b in BUILDING_EPOCH
+    and b not in MAP_SUBSTITUTE_BUILDINGS
 )
 
 # Only in the pool when the building_unlocks option is on.
@@ -120,6 +138,40 @@ ITEM_ID_TO_BUILDING = {
     BASE_ID + UNLOCK_ITEM_BASE + n: display
     for n, display in enumerate(_ALL_BUILDINGS)
     if display in LOCKABLE_BUILDINGS
+}
+
+# Wonders are gated the same way, and by the same option, but they are not
+# checks: building one sends nothing. A wonder is worth finding for its own
+# sake - and under a wonder goal it is the goal - so the item is the reward and
+# the construction is the use of it, rather than both at once.
+#
+# Their own id block, so that adding a wonder never renumbers a building. Ids
+# run over every wonder, gated or not, for the same reason.
+WONDER_UNLOCK_ITEM_BASE = 300
+
+WONDER_ITEM_PREFIX = "Wonder: "
+
+_ALL_WONDERS: tuple[str, ...] = tuple(
+    display for _raw, (display, _epoch) in sorted(WONDERS.items())
+)
+
+
+def wonder_item(display: str) -> str:
+    """The item name that unlocks this wonder."""
+    return f"{WONDER_ITEM_PREFIX}{display}"
+
+
+for _n, _display in enumerate(_ALL_WONDERS):
+    ITEM_TABLE[wonder_item(_display)] = (
+        WONDER_UNLOCK_ITEM_BASE + _n, ItemClassification.progression, None,
+    )
+
+# AP item id -> wonder the client should make buildable. Kept apart from the
+# building map because the client gates them through the same mechanism but
+# counts them for a different purpose.
+ITEM_ID_TO_WONDER = {
+    BASE_ID + WONDER_UNLOCK_ITEM_BASE + n: display
+    for n, display in enumerate(_ALL_WONDERS)
 }
 
 try:

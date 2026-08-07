@@ -93,6 +93,20 @@ HEADING_BUILDINGS = {
 # dangerous direction: it would tell logic a check is reachable when it is not.
 FAMILY_FALLBACK = {
     "Ship Galley": ("Dock", "Navy Yard"),
+
+    # Art of Conquest's Space Age families. The tables predate the expansion so
+    # they carry no heading for any of these; the producers are reported from
+    # the game itself - a Space Dock builds the Space Capital Ship, the Space
+    # Carrier, the Space Transporter and the Space Corvette.
+    #
+    # `Space Fighter` is the family that mixes: its Planetary Fighter comes
+    # from the Airport and its Spy Satellite from the Capitol, both handled per
+    # unit in Locations.UNIT_PRODUCER_OVERRIDES. The Space Dock stands as the
+    # family's default for `Sp15 - Space Fighter`, which is the one member
+    # nothing else accounts for.
+    "Spaceship": ("Space Dock",),
+    "Space Corvette": ("Space Dock",),
+    "Space Fighter": ("Space Dock",),
 }
 
 
@@ -129,6 +143,22 @@ def unit_tables(page):
 
 # The chart's "Temple Units", which the shared table heading names separately.
 TEMPLE_UNITS = ("Priest", "Prophet")
+
+# Labels in the shared Town Center / Capitol table that name a unit whose
+# *family* is produced elsewhere.
+#
+# `Balloon` is the whole reason this exists. It matches the two balloons, which
+# the database files under `Helicopter` along with the gunships and transports,
+# so one label handed a Capitol and a Town Center to every helicopter in the
+# game. That is the dangerous direction: a Capitol is never lockable, so
+# `buildings_needed_for` concluded a helicopter needs no Airport unlock at all,
+# and `Building: Airport` could then be placed behind one.
+#
+# Dropping the label leaves the family with the Airport it gets from the
+# Aircraft table. If a balloon really is built at a Town Center, requiring the
+# Airport is merely stricter than the game; the reverse would be a check that
+# cannot be sent.
+SHARED_TABLE_SKIP = ("Balloon",)
 
 # `x `-prefixed records are scenario and campaign props, not units a skirmish
 # can ever produce. Counting them would let a family look obtainable from a
@@ -169,6 +199,8 @@ def derive():
                 continue
             for label in names:
                 # The one table that names two producers is split by unit.
+                if label.rstrip("*") in SHARED_TABLE_SKIP:
+                    continue
                 here = ("Temple",) if label.rstrip("*") in TEMPLE_UNITS else blds
                 fams = families_for(label)
                 if not fams:

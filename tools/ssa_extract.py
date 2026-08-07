@@ -25,9 +25,12 @@ import struct
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from install import data_ssa  # noqa: E402
+from install import DEFAULT_EDITION, EDITIONS, data_ssa  # noqa: E402
 
+# Art of Conquest unless asked otherwise; `base` is the original game's, kept
+# for the base-game support that is still to come. See install.EDITIONS.
 DEFAULT_SSA = data_ssa()
+SSA_BY_EDITION = {name: data_ssa(edition=name) for name in EDITIONS}
 
 
 def parse(path: str):
@@ -56,7 +59,10 @@ def parse(path: str):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--ssa", default=DEFAULT_SSA)
+    ap.add_argument("--edition", choices=sorted(EDITIONS),
+                    default=DEFAULT_EDITION,
+                    help="which edition's archive to read")
+    ap.add_argument("--ssa", help="an explicit path, overriding --edition")
     ap.add_argument("--list", nargs="?", const="", help="list entries containing this text")
     ap.add_argument("--extract", help="exact entry name to extract")
     ap.add_argument("--out", help="destination path")
@@ -64,8 +70,9 @@ def main():
                     help="write the stored bytes without PK01 decompression")
     args = ap.parse_args()
 
-    entries = list(parse(args.ssa))
-    print(f"{len(entries)} entries in {os.path.basename(args.ssa)}")
+    ssa = args.ssa or SSA_BY_EDITION[args.edition]
+    entries = list(parse(ssa))
+    print(f"{len(entries)} entries in {ssa}")
 
     if args.list is not None:
         needle = args.list.lower()
@@ -85,7 +92,7 @@ def main():
         target = args.extract.lower()
         for name, start, size in entries:
             if name.lower() == target:
-                with open(args.ssa, "rb") as f:
+                with open(ssa, "rb") as f:
                     f.seek(start)
                     blob = f.read(size)
                 packed = len(blob)

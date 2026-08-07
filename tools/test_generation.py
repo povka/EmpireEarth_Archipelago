@@ -82,13 +82,24 @@ Empire Earth:
   goal: {goal}
   goal_epoch: {goal_epoch}
   wonders_for_victory: {wonders}
+  # Wonders are gated by this option and are not checks, so counting them
+  # means counting the `Wonder:` items it puts in the pool.
+  building_unlocks: true
 """
 
-# (goal, goal_epoch, wonders, expected wonder checks, must generate)
+# (goal, goal_epoch, wonders, expected `Wonder:` items, must generate)
 GOAL_CASES = [
-    ("reach_epoch", "space_age", 0, 0, True),
-    ("wonder_victory", "space_age", 3, 7, True),
-    ("wonder_victory", "bronze_age", 6, 6, True),   # Time Machine excluded
+    # Wonder unlocks do not depend on the goal. A wonder is buildable in any
+    # seed and gating one is worth doing whether or not the run ends by
+    # raising them, so an epoch-goal seed still offers all eight - it just
+    # never has to use them. Only `building_unlocks` decides whether they
+    # exist at all.
+    ("reach_epoch", "space_age", 0, 8, True),
+    # Eight, not nine: these fixtures leave `map_terrain` at its default, and a
+    # land-and-water map has the Pharos Lighthouse rather than the Orbital
+    # Space Station that stands in its place on a space map.
+    ("wonder_victory", "space_age", 3, 8, True),
+    ("wonder_victory", "bronze_age", 6, 6, True),
     ("either", "dark_age", 1, 6, True),
     # wonders_for_victory and goal must agree, or the match could end in a
     # victory the seed does not recognise.
@@ -209,11 +220,19 @@ def run_one(goal: str, epochs: int, bundle: int) -> tuple[bool, str]:
     return True, f"{epochs} epochs, {len(reach)} checks"
 
 
-WONDER_NAMES = [
-    "Coliseum", "Ishtar gates", "Library of Alexandria",
-    "Lighthouse at Alexandria", "Temple of Zeus", "Time Machine",
-    "Tower of Babylon",
-]
+def wonder_names() -> list[str]:
+    """Every wonder the world knows about, read rather than listed.
+
+    This was a hardcoded list of the base game's seven. When the object tables
+    were regenerated from the Art of Conquest database it silently kept
+    counting seven, so the two wonders the expansion adds were invisible to
+    every assertion here - a test that cannot see new content is worse than no
+    test, because it reports success.
+    """
+    world_modules()
+    from Objects import WONDERS
+
+    return sorted(display for _raw, (display, _epoch) in WONDERS.items())
 
 
 def run_goal(goal, goal_epoch, wonders, expect_checks, should_generate):
@@ -229,14 +248,22 @@ def run_goal(goal, goal_epoch, wonders, expect_checks, should_generate):
 
     if text is None:
         return False, why
-    built = {w for w in WONDER_NAMES if re.search(
-        rf"^Build {re.escape(w)}:", text, re.M)}
-    if len(built) != expect_checks:
-        return False, f"expected {expect_checks} wonder checks, found {len(built)}"
-    # Time Machine needs the Space Age, so it may only appear in such a seed.
-    if "Time Machine" in built and goal_epoch != "space_age":
-        return False, "Time Machine check in a seed that cannot reach it"
-    return True, f"{len(built)} wonder checks"
+    # A wonder is not a check any more - building one sends nothing - so what
+    # a seed offers is the unlock item, and that is what gets counted.
+    offered = {w for w in wonder_names()
+               # Trailing \s* because the spoiler is written with CRLF line
+               # endings, so `$` does not sit where it looks like it does.
+               if re.search(rf": Wonder: {re.escape(w)}\s*$", text, re.M)}
+    if len(offered) != expect_checks:
+        return False, (f"expected {expect_checks} wonder items, "
+                       f"found {len(offered)}")
+    if re.search(r"^Build (?:Coliseum|Time Machine|Tower of Babylon):",
+                 text, re.M):
+        return False, "a wonder was placed as a check"
+    # Time Machine needs the Space Age, so its unlock may only appear there.
+    if "Time Machine" in offered and goal_epoch != "space_age":
+        return False, "Time Machine unlock in a seed that cannot reach it"
+    return True, f"{len(offered)} wonder items"
 
 
 LOGIC_YAML = """name: EETest
@@ -462,6 +489,52 @@ def run_simulation(start: str, goal: str, start_i: int, goal_i: int,
     return True, f"completable, {len(taken)}/{len(placements)} checks reachable"
 
 
+TERRAIN_YAML = """name: EETest
+description: terrain {terrain}
+game: Empire Earth
+requires:
+  version: 0.6.7
+
+Empire Earth:
+  goal_epoch: space_age
+  map_terrain: {terrain}
+"""
+
+# terrain -> (checks that must be present, checks that must be absent)
+TERRAIN_CASES = {
+    "land_only": ((), ("Build Dock", "Build Navy Yard", "Build Space Dock",
+                       "Recruit Juggernaut Frigate", "Recruit Space Corvette")),
+    "land_and_water": (("Build Dock", "Build Navy Yard",
+                        "Recruit Juggernaut Frigate"),
+                       ("Build Space Dock", "Recruit Space Corvette")),
+    "space": (("Build Space Dock", "Build Space Turret",
+               "Recruit Space Corvette"),
+              ("Build Dock", "Build Navy Yard", "Recruit Juggernaut Frigate")),
+}
+
+
+def run_terrain(terrain: str) -> tuple[bool, str]:
+    """A seed must only offer what the declared map can actually build.
+
+    The client forces map size but never map choice, so `map_terrain` is the
+    player telling the seed which map they will play. Get this wrong and a run
+    is full of checks nobody can send - a land-only map has no Dock, and a
+    space map replaces the Dock with a Space Dock rather than adding one.
+    """
+    want, unwanted = TERRAIN_CASES[terrain]
+    text, why = spoiler_for(TERRAIN_YAML.format(terrain=terrain))
+    if text is None:
+        return False, why
+    present = set(re.findall(r"^(Build .+?|Recruit .+?):", text, re.M))
+    missing = [n for n in want if n not in present]
+    extra = [n for n in unwanted if n in present]
+    if missing:
+        return False, f"expected but absent: {missing}"
+    if extra:
+        return False, f"present but this map cannot build it: {extra}"
+    return True, f"{len(present)} build/recruit checks"
+
+
 def run_settings() -> tuple[bool, str]:
     """Every match setting must survive generation with the value asked for."""
     text, why = spoiler_for(SETTINGS_YAML)
@@ -522,9 +595,11 @@ def run_data_floors() -> tuple[bool, str]:
     import struct
     world_modules()
     from Locations import (
+        EXCLUDED_UNIT_NAMES,
         LOCATION_MIN_EPOCH,
         RECRUIT_LOCATION_BY_DBNAME,
         STARTING_LOCATIONS,
+        _is_excluded,
     )
     from Objects import UNIT_FAMILY_BY_NAME
 
@@ -535,10 +610,15 @@ def run_data_floors() -> tuple[bool, str]:
         if name.strip():
             db_epoch[name] = struct.unpack_from("<i", r, MIN_EPOCH_OFF)[0]
 
-    missing, wrong = [], []
+    missing, wrong, skipped = [], [], 0
     for db_name in UNIT_FAMILY_BY_NAME:
-        if db_name.lower().startswith("x"):
-            continue                       # scenario and campaign props
+        # Deliberate exclusions only - scenario props and the handful of
+        # campaign heroes no skirmish offers. Anything else missing a check is
+        # the bug this exists to catch, so the world's own predicate is used
+        # rather than a second list that could quietly grow apart from it.
+        if _is_excluded(db_name):
+            skipped += 1
+            continue
         loc = RECRUIT_LOCATION_BY_DBNAME.get(db_name)
         if loc is None:
             missing.append(db_name)
@@ -563,8 +643,13 @@ def run_data_floors() -> tuple[bool, str]:
         return False, f"{len(missing)} unit(s) with no check: {missing[:3]}"
     if wrong:
         return False, f"{len(wrong)} wrong floor(s): {wrong[:3]}"
+    # A short, named exclusion list is the point: it stops the skip above from
+    # being able to hide a unit by accident.
+    if len(EXCLUDED_UNIT_NAMES) > 8:
+        return False, (f"{len(EXCLUDED_UNIT_NAMES)} hand-excluded units - too "
+                       "many to trust; every one should be justified")
     return True, (f"{len(RECRUIT_LOCATION_BY_DBNAME)} recruit checks, "
-                  "no floor below the unit's own epoch")
+                  f"{skipped} excluded, no floor below the unit's own epoch")
 
 
 def main():
@@ -632,6 +717,12 @@ def main():
     print(f"  {mark}  {'recruit floors vs database':<45s}  {detail}")
     failures += 0 if ok else 1
     total_extra += 1
+
+    for terrain in TERRAIN_CASES:
+        ok, detail = run_terrain(terrain)
+        print(f"  {'PASS' if ok else 'FAIL'}  {'terrain ' + terrain:<45s}  {detail}")
+        failures += 0 if ok else 1
+    total_extra += len(TERRAIN_CASES)
 
     ok, detail = run_settings()
     print(f"  {'PASS' if ok else 'FAIL'}  {'match settings':<45s}  {detail}")

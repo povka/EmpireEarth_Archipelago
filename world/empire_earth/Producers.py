@@ -22,7 +22,7 @@ UNIT_FAMILY_PRODUCERS: dict[str, tuple[str, ...]] = {
     "Human Sword": ("Barracks",),
     "Mounted Archer": ("Stable",),
     "Lancer": ("Stable",),
-    "Helicopter": ("Airport", "Capitol", "Town Center",),
+    "Helicopter": ("Airport",),
     "Curiassier": ("Stable",),
     "Bomber": ("Airport",),
     "Battleship": ("Dock", "Navy Yard",),
@@ -52,4 +52,7 @@ UNIT_FAMILY_PRODUCERS: dict[str, tuple[str, ...]] = {
     "Elite Guard": ("Barracks",),
     "Artillery": ("Siege Factory",),
     "Cavalry Archer": ("Archery Range",),
+    "Spaceship": ("Space Dock",),
+    "Space Fighter": ("Space Dock",),
+    "Space Corvette": ("Space Dock",),
 }
