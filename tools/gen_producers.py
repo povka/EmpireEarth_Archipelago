@@ -64,8 +64,14 @@ OUT = os.path.join(ROOT, "world", "empire_earth", "Producers.py")
 HEADING_BUILDINGS = {
     # This one table covers two different producers, so it is split below by
     # unit rather than unioned - a Priest does not come from a Town Center.
+    #
+    # `Settlement` is deliberately NOT here, though it was once. The heading
+    # names two buildings and a Settlement is neither: it trains nothing at all
+    # until five citizens garrison in it and it becomes a Town Center, which is
+    # what BUILDING_PREREQS already models. Listing it claimed citizens and
+    # Canine Scouts could be made at one.
     "Town Center / Capitol Units & Temple Units":
-        ("Town Center", "Capitol", "Settlement"),
+        ("Town Center", "Capitol"),
     "Archers": ("Archery Range",),
     "Infantry": ("Barracks",),
     "Cavalry": ("Stable",),

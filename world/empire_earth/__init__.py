@@ -1,4 +1,4 @@
-from BaseClasses import ItemClassification, Region, Tutorial
+from BaseClasses import Region, Tutorial
 from Options import OptionError
 from worlds.AutoWorld import WebWorld, World
 from worlds.LauncherComponents import Component, Type, components, launch_subprocess
@@ -14,7 +14,7 @@ from .Items import (
 )
 from .Locations import (
     ALWAYS_LOCATIONS,
-    RECRUIT_LOCATION_FAMILY,
+    RECRUIT_LOCATION_PRODUCERS,
     LOCATION_MIN_EPOCH,
     LOCATION_NAME_TO_ID,
     TECH_LOCATION_BUILDING,
@@ -172,12 +172,14 @@ class EmpireEarthWorld(World):
                 return [option(prereq)]
             return []              # Capitol, Farm, and the wonders
         if name.startswith("Recruit "):
-            family = RECRUIT_LOCATION_FAMILY.get(name)
-            if family is None:
+            # Per unit, not per family: a family can hold units that different
+            # buildings train, and one unlockable producer among them must not
+            # be demanded of a unit that does not use it.
+            producers = RECRUIT_LOCATION_PRODUCERS.get(name, ())
+            if not producers:
                 return []
-            from .Producers import UNIT_FAMILY_PRODUCERS
-
-            producers = UNIT_FAMILY_PRODUCERS.get(family, ())
+            # One producer that is never locked is enough to make the unit
+            # reachable without any unlock at all.
             if any(b not in LOCKABLE_BUILDINGS for b in producers):
                 return []
             return [option(b) for b in producers]

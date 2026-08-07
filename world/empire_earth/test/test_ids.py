@@ -9,9 +9,10 @@ unit block was moved out to 1000.
 from ..Epochs import EPOCH_NAMES
 from ..Items import ITEM_NAME_TO_ID
 from ..Locations import (
+    ALL_RECRUITABLE,
     LOCATION_NAME_TO_ID,
+    PAIRED_LOCATIONS,
     RECRUIT_LOCATION_BY_DBNAME,
-    TRAINABLE_UNITS,
 )
 from .bases import EmpireEarthTestBase
 
@@ -36,10 +37,21 @@ class TestTables(EmpireEarthTestBase):
         hand-written list of families that did not include its own, so
         recruiting one sent nothing and the player had no way to tell.
         """
-        missing = [db for db in TRAINABLE_UNITS
+        missing = [db for db in ALL_RECRUITABLE
                    if db not in RECRUIT_LOCATION_BY_DBNAME]
         self.assertEqual(missing, [])
 
     def test_every_recruit_check_is_a_real_location(self):
         for db, name in RECRUIT_LOCATION_BY_DBNAME.items():
             self.assertIn(name, LOCATION_NAME_TO_ID, f"{db} -> {name}")
+
+    def test_hero_pairs_are_symmetric_and_real(self):
+        """Each hero of a tier must send the other's check, both ways.
+
+        Only one of the two can exist in a match, so a one-way pairing would
+        leave the other side unsendable - which is the state this replaced.
+        """
+        for name, partner in PAIRED_LOCATIONS.items():
+            self.assertIn(name, LOCATION_NAME_TO_ID)
+            self.assertIn(partner, LOCATION_NAME_TO_ID)
+            self.assertEqual(PAIRED_LOCATIONS.get(partner), name)

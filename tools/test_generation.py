@@ -310,8 +310,7 @@ def run_unlocks(start: str, goal: str, goal_i: int):
     stable - which is why the producer table exists at all.
     """
     world_modules()
-    from Locations import LOCATION_MIN_EPOCH
-    from Producers import UNIT_FAMILY_PRODUCERS
+    from Locations import LOCATION_MIN_EPOCH, RECRUIT_LOCATION_PRODUCERS
     from Items import LOCKABLE_BUILDINGS
 
     text, why = spoiler_for(UNLOCK_YAML.format(start=start, goal=goal))
@@ -330,7 +329,12 @@ def run_unlocks(start: str, goal: str, goal_i: int):
         if loc == f"Build {building}":
             circular.append(f"{building} on its own build check")
         elif loc.startswith("Recruit "):
-            producers = UNIT_FAMILY_PRODUCERS.get(loc[len("Recruit "):], ())
+            # Keyed by the location, not by `loc` minus its prefix. That left a
+            # unit *display* name being looked up in a table keyed by *family*,
+            # so it matched nothing, `producers` was always empty, and the
+            # circularity test below could never fire - the subtle case this
+            # function exists to catch was silently passing.
+            producers = RECRUIT_LOCATION_PRODUCERS.get(loc, ())
             # Only circular when this building is the sole way to get the
             # family. Another producer leaves the check reachable, and one that
             # is never locked at all - a Capitol makes citizens - leaves it
@@ -374,7 +378,6 @@ def run_simulation(start: str, goal: str, start_i: int, goal_i: int,
     from Locations import LOCATION_MIN_EPOCH, LOCATION_NAME_TO_ID
     from Locations import building_epoch
     from Objects import BUILDINGS
-    from Producers import UNIT_FAMILY_PRODUCERS
     from Items import LOCKABLE_BUILDINGS, BUILDING_PREREQS
     from Epochs import EPOCH_NAMES
 
@@ -414,10 +417,10 @@ def run_simulation(start: str, goal: str, start_i: int, goal_i: int,
                 return True                     # a wonder; its floor applied
             return buildable(name, epoch, inv)
         if loc.startswith("Recruit "):
-            # Same producers as its family; the floor is applied above.
-            from Locations import RECRUIT_LOCATION_FAMILY
-            fam = RECRUIT_LOCATION_FAMILY.get(loc)
-            producers = UNIT_FAMILY_PRODUCERS.get(fam, ()) if fam else ()
+            # Per unit, matching what the world's own rules use; the floor is
+            # applied above.
+            from Locations import RECRUIT_LOCATION_PRODUCERS
+            producers = RECRUIT_LOCATION_PRODUCERS.get(loc, ())
             return any(buildable(b, epoch, inv) for b in producers)
         if loc.startswith("Research "):
             # A technology is researched at exactly one building, and its own
@@ -499,6 +502,15 @@ def run_data_floors() -> tuple[bool, str]:
         from ssa_extract import DEFAULT_SSA
     except ImportError as e:
         return True, f"skipped: {e}"
+    except SystemExit:
+        # `ssa_extract` resolves the game's path at import time, and
+        # `install.find_root()` raises SystemExit when there is no install.
+        # SystemExit derives from BaseException, so `except ImportError` let it
+        # straight past and it took the whole run down with it - the settings
+        # test, every goal case and the summary never ran, and the suite exited
+        # non-zero on a machine that simply has no game installed. The skip
+        # below was written for this and could never be reached.
+        return True, "skipped: no Empire Earth install"
     if not os.path.exists(DEFAULT_SSA):
         return True, "skipped: game data not installed"
 
@@ -607,7 +619,12 @@ def main():
     total_extra += 3
 
     ok, detail = run_data_floors()
-    print(f"  {'PASS' if ok else 'FAIL'}  {'recruit floors vs database':<45s}  {detail}")
+    # Reported as SKIP rather than PASS when there is no game to read: this is
+    # the only check that reads the database instead of the world's own tables,
+    # so a run without it has not verified the floors at all, and saying PASS
+    # would claim otherwise.
+    mark = "SKIP" if ok and detail.startswith("skipped") else ("PASS" if ok else "FAIL")
+    print(f"  {mark}  {'recruit floors vs database':<45s}  {detail}")
     failures += 0 if ok else 1
     total_extra += 1
 

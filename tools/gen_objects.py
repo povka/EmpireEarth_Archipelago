@@ -71,6 +71,14 @@ BUILDING_EXCLUDE_MARKERS = (
     " - ww1", " - ww2", " - digital", " - nano", " - space",
     "wall", "gate", "barbed", "obstacle", "runway", "improved",
     "aa10", "aa13", "steel mill",
+    # The Farm is kept out by choice, not because it is a variant. It is the
+    # one building with no tech tree node the client can reach - the only icon
+    # mentioning a farm is `but_farm_15t`, an epoch 14 variant - so it can
+    # neither be gated nor have its epoch confirmed against the running game
+    # the way every other building's is. That leaves its floor coming from
+    # `dbobjects.dat` alone, which is the number this project does not trust
+    # for buildings.
+    "farm",
 )
 
 # Families that hold no recruitable unit. Everything else in the database's
@@ -84,6 +92,21 @@ BUILDING_EXCLUDE_MARKERS = (
 NON_UNIT_FAMILIES = {
     "No Family", "Resource", "Building", "Animal", "Fish", "Mines",
     "Ambient", "Towers", "Walls",
+}
+
+# Records that sit in a unit family but are abilities rather than units, so
+# nothing can ever recruit one and a check for it could never be sent.
+# `Hurricane` and `Torpedo` are filed under Ship, `Anti Matter Storm` under
+# Helicopter, all three at epoch 0 with 9999 hitpoints.
+#
+# The family floor already ignored them, because it skips epoch 0 - but the
+# per-unit tables did not, so they arrived in Objects.py as recruitable units.
+# Excluded here rather than deleted from the generated file by hand: this is
+# the only place the exclusion survives a regeneration.
+NON_UNIT_NAMES = {
+    "Hurricane",
+    "Torpedo",
+    "Anti Matter Storm",
 }
 
 
@@ -169,7 +192,10 @@ def build(ssa: str):
     for idx, name in enumerate(fam):
         if name in NON_UNIT_FAMILIES:
             continue
-        mine = [n for _i, n, f in recs if f == idx and not n.startswith("b ")]
+        mine = [
+            n for _i, n, f in recs
+            if f == idx and not n.startswith("b ") and n not in NON_UNIT_NAMES
+        ]
         if not mine:
             continue
         real = [

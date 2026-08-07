@@ -48,6 +48,7 @@ from .Items import (
 from .Locations import (
     BUILD_LOCATION_BY_DBNAME,
     LOCATION_NAME_TO_ID,
+    PAIRED_LOCATIONS,
     RECRUIT_LOCATION_BY_DBNAME,
     TECH_LOCATION_BY_NODE,
     WONDER_LOCATION_BY_DBNAME,
@@ -57,7 +58,6 @@ from .Banner import Banner
 from .WinHook import WinHook
 from .Diplomacy import Diplomacy
 from .MatchSettings import MatchSettings, clamp_unit_limit, describe
-from .Objects import UNIT_FAMILY_BY_NAME
 from .Roster import Roster
 from .Memory import attach
 
@@ -533,6 +533,41 @@ class EmpireEarthContext(CommonContext):
             logger.info(f"Attached to {os.path.basename(exe_path)} using profile '{prof.name}'.")
         return True
 
+    def release_game(self):
+        """Undo everything that outlives this client, on the way out.
+
+        Three of the client's writes do not heal by themselves, and each leaves
+        the game in a state the player cannot get out of without restarting it:
+
+        * the effect-call detour at `0x005CFAAF`, which keeps withholding
+          technology benefits with nothing left to grant them
+        * the win detour, if it was armed and the match ended before it fired
+        * every building held out of the build menu, which the engine only ever
+          re-opens on the epoch transition that would have opened it anyway
+
+        Best-effort by design. A client killed outright never gets here, which
+        is what `TechEffects.adopt()` and `BuildingGate`'s "ask the node" rule
+        are for - both let the next client pick up a game left mid-patch.
+
+        The allocated pages are deliberately *not* freed. They are 4 KB apiece
+        and the process is about to keep running without us; freeing one a game
+        thread happens to be executing would crash it, and the code patches are
+        already gone by then, so nothing new can enter them.
+        """
+        if not self.proc or not self.proc.alive:
+            return
+        for what, undo in (
+            ("technology suppression", getattr(self.tech_effects, "restore", None)),
+            ("the in-game win hook", getattr(self.win_hook, "restore", None)),
+            ("building locks", getattr(self.gate, "restore", None)),
+        ):
+            if undo is None:
+                continue
+            try:
+                undo()
+            except Exception as e:
+                logger.warning(f"Could not undo {what}: {e!r}")
+
     async def apply_pending_items(self):
         """Credit every item the server has sent that we haven't applied yet.
 
@@ -829,8 +864,12 @@ class EmpireEarthContext(CommonContext):
     def locations_for(self, db_name: str) -> list[str]:
         """Every check this type name satisfies.
 
-        Matching is on the type name the game itself reports, so each unit
-        satisfies exactly its own check.
+        Matching is on the type name the game itself reports, so a unit
+        satisfies its own check - and, for the heroes, its counterpart's.
+
+        The two heroes of a tier are mutually exclusive: build Sargon of Akkad
+        and Gilgamesh can never exist in that match. One of the pair would
+        therefore be a check nobody could send, so recruiting either sends both.
         """
         loc = BUILD_LOCATION_BY_DBNAME.get(db_name)
         if loc is not None:
@@ -839,7 +878,10 @@ class EmpireEarthContext(CommonContext):
         if loc is not None:
             return [loc]
         recruit = RECRUIT_LOCATION_BY_DBNAME.get(db_name)
-        return [recruit] if recruit else []
+        if not recruit:
+            return []
+        partner = PAIRED_LOCATIONS.get(recruit)
+        return [recruit, partner] if partner else [recruit]
 
     def location_for(self, db_name: str) -> str | None:
         """The first check a type name satisfies, for the /roster display."""
@@ -963,10 +1005,9 @@ class EmpireEarthContext(CommonContext):
         if self.obsolescence:
             self.obsolescence.forget()
         self.permanence_reported = False
-        # Nothing to suppress between matches, and the next match's tech tree
-        # lives somewhere else.
-        if self.tech_effects:
-            self.tech_effects.set_local_tree(None)
+        # The suppression stub needs no telling: it resolves the local player's
+        # tech tree on every call, and outside a match that resolves to null and
+        # everything passes through.
         self.granted_techs.clear()
         self.granted_key = None
         self.tech_announced = False
@@ -1143,7 +1184,14 @@ def launch(*args):
         ctx.game_task = asyncio.create_task(game_watcher(ctx), name="GameWatcher")
 
         await ctx.exit_event.wait()
+        # Stop the watcher before undoing anything, or a poll already in flight
+        # re-arms what release_game has just taken back out.
         ctx.game_task.cancel()
+        try:
+            await ctx.game_task
+        except asyncio.CancelledError:
+            pass
+        ctx.release_game()
         if ctx.proc:
             ctx.proc.close()
         await ctx.shutdown()

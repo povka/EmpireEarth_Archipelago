@@ -22,6 +22,20 @@ set `+0x18` to 15, which is the value units that never expire already carry.
 The availability predicate calls this, so a node that is never obsolete stays
 in its build menu for the rest of the match.
 
+OPEN BUG - do not treat the paragraph above as correct. The two fields are not
+the same kind of thing. `+0x18` is an expiry date and clearing it is right;
+`+0x05` is the engine's record that a **specific later unit has replaced this
+one**, and clearing that does not preserve the old unit beside its replacement,
+it cancels the upgrade. Observed in play: a Slinger upgraded to a Simple Bowman
+is offered as a Slinger again one epoch later, which also means the Simple
+Bowman's check can no longer be sent - and per-unit checks hold progression, so
+a seed can be left unfinishable.
+
+The fix is to leave `+0x05` alone and have a recruited unit send the checks for
+everything it supersedes, which needs an upgrade-chain table the project does
+not have yet. See "Clearing `+0x05` cancels the upgrade" in notes/REVERSE.md
+for the evidence, the options, and where to look for the chain.
+
 This needs no name for anything. Every node on the local player's tree is
 written, which sidesteps the problem that only 43 of 178 units can be tied to a
 node at all - the icons the tree uses do not match database names.

@@ -454,6 +454,84 @@ else can be built until the Stone Age - and the filler spins forever with
 nowhere to put the first epoch unlock. That is what a 300-second generation
 timeout turned out to mean.
 
+### Being in a unit family does not make something a unit
+
+Three records are abilities filed under a unit family: `Hurricane` and
+`Torpedo` under Ship, `Anti Matter Storm` under Helicopter, all at epoch 0 with
+9999 hitpoints. Nothing can recruit one, so a check for it could never be sent -
+and taking a family's floor as the minimum over its members claimed helicopters
+were recruitable in the Prehistoric Age.
+
+The family floor never saw them, because it ignores epoch 0 and no real unit
+sits there (the earliest is the Citizen at 1). The **per-unit** tables did, and
+that is how they reached `Objects.py` as recruitable units. `gen_objects.py`
+now excludes them by name, in `NON_UNIT_NAMES`.
+
+The general shape, and it has now cost two rounds: a filter that protects the
+family view does not protect the per-unit view. They are separate emissions from
+the same records.
+
+### The morale heroes: one check that pays out twice
+
+`h2-3` through `h2-14` are real, recruitable units, each facing an `h1-`
+healing hero of the same tier. You cannot have both - taking either forecloses
+the other - so a check on each is a pair the fill would treat as independent
+when it is not, and one of the two could never be sent.
+
+They were excluded outright at first. The better answer is to stop modelling
+them as a choice: **recruiting either hero of a tier sends both checks.** Only
+one can exist, so the pair is always satisfied together, and logically it
+becomes one check that pays out twice - a thing the fill can represent, unlike
+a choice. Which hero you actually build stays a free decision with no
+consequences for the seed.
+
+`UNIT_PAIR` in `Locations.py` pairs them by tier off the name (`h([12])[-
+]?(\d+)`), `PAIRED_LOCATIONS` is the same relation between location names, and
+`Client.locations_for` returns both. It is symmetric on purpose: a one-way
+pairing would leave the morale side unsendable, which is the state this
+replaced.
+
+Two details worth keeping:
+
+* **They get an id block of their own** (`PAIRED_UNIT_LOCATION_BASE = 2000`).
+  `h2-` sorts into the middle of `TRAINABLE_UNITS`, so appending twelve names
+  there would have renumbered every unit after them - the whole navy. All 343
+  existing ids survived; twelve were added.
+* **The heroes were also misnamed.** The general display rule strips only the
+  first letters-and-digits run, so `h1-3 Sargon of Akkad (heal)` came out as
+  `Recruit 3 Sargon of Akkad (heal)`, tier number and all. Heroes now get their
+  own pass, dropping the tier and the `(heal)` / `(Morale)` role marker, which
+  leaves `Recruit Sargon of Akkad`. All twenty-four stay distinct without the
+  marker - checked, because the dedupe would otherwise have started appending
+  `(2)` and quietly renamed one of them.
+
+This is a **logic** decision, not a data one, so all of it lives in
+`Locations.py` - `Objects.py` stays a faithful dump of the database, and what
+counts as a check is decided in one place.
+
+### Never hand-edit a generated table
+
+`Objects.py` says "do not edit by hand" and was, once: the exclusions above were
+made by deleting rows and commenting others out. `gen_objects.py` knew about
+none of them, so `--write` would have silently put all sixteen records back, and
+the reasons existed nowhere.
+
+Deleting `b  Farm` did more than that. Building ids are assigned by enumerating
+the table in sorted order, so dropping a row **shifted the location and item ids
+of the twelve buildings that sort after it** (Fortress through University) -
+exactly what the "ids never shift" comments in `Items.py` and `Locations.py`
+promise not to do. Seeds rolled before that change do not match the apworld
+after it. The removal stands; the shift is spent, and reversing it would only
+cost a second one.
+
+The `ALWAYS_BUILDABLE` guard in `Items.py` does not help here. It keeps a
+building in the table while withholding its *unlock*, so excluding one that way
+shifts nothing. Deleting the row is the thing that moves ids, and Farm is now
+excluded in `gen_objects.py` instead - which reproduces the current table rather
+than the pre-removal one.
+
+An exclusion belongs in the generator or in `Locations.py`. Never in the output.
+
 ### Wonders need the Bronze Age, and the database does not say so
 
 `+0x70` reads **1** for six of the seven wonders, and that is wrong: they cannot
@@ -1134,6 +1212,11 @@ nothing is ever withdrawn. Verified in a live match: a Rock Thrower survived
 Stone -> Copper -> Bronze, and 0 of 778 nodes were left retirable. The checks
 are ordinary progression checks now.
 
+> **This is only half true, and the other half is a live bug.** Clearing
+> `+0x05` does not preserve an old unit beside its replacement - it cancels the
+> upgrade. See "Clearing `+0x05` cancels the upgrade" below before trusting
+> anything in this section.
+
 Two bugs came out of the first two-player run, and both were about which units
 exist rather than about the memory work:
 
@@ -1153,6 +1236,104 @@ The lesson the second one repeats: the circular-placement test would have
 caught it, but that test reads `LOCATION_MIN_EPOCH` - the same table that was
 wrong. `tools/test_generation.py` now also checks the floors against
 `data.ssa` directly, which is the only reading a wrong table cannot pass.
+
+### Clearing `+0x05` cancels the upgrade - OPEN, and it breaks seeds
+
+Observed in play: upgrade a Slinger to a Simple Bowman, advance one more epoch,
+and the Archery Range is offering **Slingers again**.
+
+`Obsolescence.py` clears both retirement paths on every node, and the two are
+not the same kind of thing:
+
+| field | meaning | clearing it |
+|---|---|---|
+| `+0x18` | "expires after epoch N" | correct - this is what keeps a Rock Thrower recruitable |
+| `+0x05` | "a specific later unit **has replaced** this one" | wrong - this is the upgrade link itself |
+
+`+0x05` is not a expiry date, it is the engine's record that the upgrade
+happened. Zeroing it does not keep the Slinger available *alongside* the Simple
+Bowman; it un-does the replacement, and the menu falls back to the earlier tier.
+
+**This is a seed-breaking bug, not a cosmetic one.** If the menu reverts, the
+replacement's own check cannot be sent, and per-unit checks hold progression -
+so a seed can be left unfinishable. It is the same severity as
+`Epoch: Bronze Age` on `Build Siege Factory`, arriving by a different route.
+
+#### The fix, and why it cannot be written yet
+
+The right shape is to stop fighting the engine: leave `+0x05` alone, let
+upgrades happen, and make **recruiting a unit send the checks for everything it
+supersedes** - build a Simple Bowman and Slinger's check goes too.
+
+That needs a table of which unit supersedes which. **The repo does not have
+one, and nothing shipped with the game yields it reliably.**
+
+*Family is not the chain.* `Human` holds `Domestic Wolf`, `Inf01 - Rock
+Thrower`, `Prophet`, three Field Medics and several separate infantry lines.
+
+*Names are not the chain either*, though they look like it. Tier numbers give
+`Arch02 -> Arch03 -> Arch05 -> Arch06`, and then twenty groups turn out to hold
+several units at the same tier - which are **alternatives, not upgrades**. The
+clearest case is the `Ship` family at tier 4:
+
+```
+s04 Bronze Catapult Ship   s04 Bronze Frigate
+s04 Bronze Transport       s04 Fishing Boat Bronze
+```
+
+A Fishing Boat does not upgrade into a Frigate. The real chain runs per *role* -
+Fishing Boat Stone -> Bronze -> Imperial -> Modern -> Digital - and the role is
+in the descriptive text, not the tier prefix. `Siege04 - Ram` vs
+`Siege04 - Tower` and the three `Inf10` weapons are the same story.
+
+Scale: **118 of the 203 units are not the top tier of their group**, so this
+governs most of the check pool.
+
+#### The asymmetry that should drive the design
+
+* A **missing** link - A is superseded, nothing sends A's check - is
+  unwinnable.
+* An **extra** link - a check sent for something never built - is a free check,
+  and the seed still completes.
+
+Errors are survivable in one direction only. That argues against a tight
+heuristic and in favour of finding the real relation.
+
+#### Where to look first: `dbobjects.dat`
+
+A record is **1948 bytes** and this project has identified about six fields. An
+"upgrades to" object index is exactly the sort of thing that would live in one,
+and `+0x74` already gives every record its own index, so a link would be
+immediately recognisable.
+
+The test is mechanical and needs only `data.ssa`:
+
+1. Take `Arch02 - Slinger`'s record, scan its 1948 bytes for a dword equal to
+   `Arch03 - Simple Bowman`'s index.
+2. Check the same offset holds Maceman's index in `Inf01 - Clubman`'s record,
+   and Cataphract's in `Cav03 - Horseman`'s.
+
+Three agreements pin it, the same way `+0x404` was pinned for Victory Allowed.
+If the field is not there, one run has ruled it out.
+
+Two fallbacks, in order of preference:
+
+* **Read it from the live game.** The engine sets `+0x05` on the superseded
+  node at the epoch transition, so the client could watch which nodes are
+  retired and pair them with what appeared. Exact and self-maintaining; needs
+  the pairing handle found first - `node+0x10`'s `EEButtonObject` is the
+  obvious candidate, since an upgrade plausibly reuses the build-menu slot.
+* **Name heuristic plus a manual correction table** for the twenty ambiguous
+  groups. Works with no game at all, but it is a guess spread over 118 checks,
+  in a place where guessing wrong is unwinnable.
+
+#### Interim safety, if the chain is still unknown
+
+Stop clearing `+0x05` and demote unit checks to non-progression again. The game
+then behaves correctly and no seed can be broken; the cost is that unit checks
+stop carrying anything, which is where they were before this section was
+written. Worth taking if the chain hunt stalls - a correct game with weaker
+checks beats a seed that cannot be finished.
 
 ### Unit epochs: settled by the shipped PDF
 
@@ -1259,6 +1440,40 @@ approach crashed the game at the exact moment the write happened.
 calls `--all-threads` riskier, and that is what it cost. Reading the vtable was
 both safer and faster.
 
+### A patch outlives the client, and the game does not notice
+
+Everything the client writes lives in the *game's* address space. Closing the
+client frees nothing: the detour at `0x005CFAAF` still points at a page that is
+still mapped, and the stub still runs on every research. So a client that exited
+mid-match left technology benefits suppressed **forever** - the half that
+withholds kept working, and the half that gives them back was gone. Same shape
+for a building held out of the build menu: the engine only writes `+0x06` on the
+epoch transition that would have opened it anyway, so one already past its epoch
+is never reconsidered.
+
+Nothing in the game detects this. There is no owner, no timeout, no handle
+whose closing undoes it - the patched five bytes are simply what the code says
+now.
+
+`EmpireEarthContext.release_game()` undoes the three that do not heal on their
+own: the effect detour, the win detour if it was armed and never fired, and the
+building locks. It runs after the watcher is cancelled and awaited, because a
+poll already in flight will otherwise re-arm what was just taken back.
+
+Two deliberate omissions:
+
+* **The pages are not freed.** 4 KB apiece, and freeing one while a game thread
+  is inside it is a crash. The code patches are gone by then, so nothing new
+  can enter them.
+* **The epoch locks are left as they are.** They *do* heal: the game re-runs
+  the two-building check on every construction and caches the answer in the
+  flag, so the next qualifying building restores whatever the client cleared.
+
+None of it helps a client that is killed outright, which is what
+`TechEffects.adopt()` and `BuildingGate`'s ask-the-node rule are for. Both let
+the next client pick a game up mid-patch rather than finding a state it cannot
+account for. Best-effort cleanup on the way out, recovery on the way back in.
+
 ### The engine writes `+0x06` too
 
 It is not a static flag to take a copy of. The engine holds a building at 0
@@ -1293,13 +1508,13 @@ so filtering on it isolates exactly the human's 778 nodes.
 
 ### Name to node
 
-The button's icon texture is the only handle. Fourteen of the twenty buildings
-match `but_<name>.sst` directly; the other six need aliases:
+The button's icon texture is the only handle. Fourteen of the nineteen buildings
+match `but_<name>.sst` directly; the other five need aliases:
 
 ```
 Archery Range     but_archery.sst          Navy Yard      but_naval yard.sst
 Cyber Factory     but_mech factory.sst     Siege Factory  but_siege workshop.sst
-Cyber Laboratory  but_mech laboratory.sst  Farm           but_farm_15t
+Cyber Laboratory  but_mech laboratory.sst
 ```
 
 `Granary` and `University` have **two** nodes each, so gating has to write every
@@ -1312,8 +1527,9 @@ ordinary Farm at any epoch below that** - so the item was bound to something
 that never appears and the Farm was never gated at all. The client now checks
 that at least one of a building's nodes unlocks in the epoch the database
 expects (`node+0x14` runs exactly one below the database epoch, consistently
-across every building) and drops the building when none does. Farm is excluded
-for that reason; 18 of the 20 are gated.
+across every building) and drops the building when none does. That is what put
+Farm out of the table altogether; of the nineteen that remain, 17 are gated -
+Capitol and Town Center are the two that never can be.
 
 ### Which building produces which unit
 
@@ -1339,6 +1555,98 @@ Town Center. The tables need no geometry at all.
 One derived fact worth keeping: the `Siege` family floors at epoch 2 not because
 the floor was polluted, but because `Sampson` is a genuine Barracks infantry
 unit in that family. Its producers are `Barracks` **or** `Siege Factory`.
+
+### A family is not always uniform
+
+`Producers.py` answers per family, and that is one building too coarse.
+`Domestic Wolf` - the Canine Scout - is filed under `Human` next to
+`Inf01 - Clubman` and `Inf01 - Rock Thrower`, which really are Barracks units.
+The Canine Scout comes from the **Capitol**, so the family's answer demanded
+`Unlock: Barracks` for a check that is available before anything is built.
+
+That is the safe direction - over-constraining can shorten nothing but the
+fill's options, and can never make a seed unwinnable - which is exactly why it
+sat there unnoticed. What it costs is reachability where there is least of it:
+in a Prehistoric start with building unlocks on, **three** checks need no unlock
+at all, and this is a fourth.
+
+`UNIT_PRODUCER_OVERRIDES` in `Locations.py` carries the exceptions, and
+`RECRUIT_LOCATION_PRODUCERS` resolves every recruit check to its producers once,
+per unit, so no rule has to consult the family again.
+
+### A Settlement produces nothing
+
+`gen_producers.py` mapped the heading `Town Center / Capitol Units & Temple
+Units` to **three** buildings, and the third was an assumption: the heading
+names two, and `Settlement` was added by hand. A Settlement trains nothing. It
+becomes a Town Center when five citizens garrison in it, and *that* trains
+things - which `BUILDING_PREREQS` already models as `Town Center -> Settlement`.
+
+It reached three families - `Citizen`, `Hero`, `Helicopter` - and changed no
+logic in any of them, because all three also list the Capitol, which is never
+locked and sits at epoch 0. So the union was wrong without being harmful: the
+right answer was already in the tuple next to it.
+
+That is the trap in a disjunction. `any(...)` over a producer list is satisfied
+by its most permissive member, so a wrong entry beside a correct one is
+invisible - it cannot make a check unreachable, and it cannot be caught by a
+test that only asks whether generation succeeds. Corrected in the generator and
+in `Producers.py` together, the two being identical here because the fix is one
+name removed from one tuple.
+
+### The test for this could never have caught it
+
+`run_unlocks` in `tools/test_generation.py` exists to catch `Unlock: Stable`
+landing on `Recruit Lancer` - a building unlock behind a check that needs that
+building. Its docstring calls that "the subtle one". It was looking up
+
+```python
+UNIT_FAMILY_PRODUCERS.get(loc[len("Recruit "):], ())
+```
+
+which asks a table keyed by **family** for a unit **display name**. It matched
+nothing, every time; `producers` was always empty, so the circularity branch
+below it could never fire. The test passed by never testing.
+
+Both sites now go through `RECRUIT_LOCATION_PRODUCERS`, keyed by the location,
+which is the same thing the world's own rules use - so the simulation and the
+rules can no longer disagree about what produces what.
+
+**The lesson is about the shape, not this bug.** A lookup that silently returns
+empty is indistinguishable from a lookup that found nothing wrong. Both read as
+a pass.
+
+Once fixed it does real work, and it passes: `17 unlocks, none circular` for a
+full Prehistoric -> Space run, `12` for Copper -> Dark.
+
+### `SystemExit` is not an `Exception`, and it ended the test run
+
+`run_data_floors` is the one check that reads `data.ssa` instead of the world's
+own tables, so it is written to skip where the game is not installed:
+
+```python
+except ImportError as e:
+    return True, f"skipped: {e}"
+```
+
+It could never reach that. `ssa_extract` resolves the game's path **at import
+time**, and `install.find_root()` raises `SystemExit` when there is none.
+`SystemExit` derives from `BaseException`, not `Exception`, so `except
+ImportError` let it past, the interpreter printed its "No Empire Earth install
+found" message, and the process died mid-suite.
+
+What that cost was invisible: the run simply stopped after the last `playable`
+line. The `match settings` test, all eight goal/wonder cases and the final
+`N/N passed` summary never ran, and the suite exited **1** on a machine whose
+only sin was having no game installed. It looked like a full pass followed by a
+note.
+
+Now caught explicitly, and reported as **SKIP** rather than PASS - a run
+without it has not checked the floors against anything, and PASS would claim it
+had. With the skip in place the suite completes: **34/34**.
+
+The same shape as the empty lookup above, and worth the same suspicion: a test
+run that ends early looks a lot like a test run that finished.
 
 ## Gotchas hit along the way
 

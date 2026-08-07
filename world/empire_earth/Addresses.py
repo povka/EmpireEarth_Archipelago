@@ -17,7 +17,7 @@ Layout (GOG Art of Conquest):
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 EXE_NAMES = ("EE-AOC.exe", "Empire Earth.exe")
 

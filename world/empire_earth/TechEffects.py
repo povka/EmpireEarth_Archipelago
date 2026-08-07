@@ -23,11 +23,20 @@ what grants the benefit.
 Only the local player is affected. At the call site `ecx` still holds the
 node's tech tree, loaded three instructions earlier and never clobbered, so the
 stub compares it against ours and lets every other player - the AI, who
-research constantly - straight through. Suppression is off whenever that
-pointer is zero, so a client that is not in a match changes nothing.
+research constantly - straight through.
+
+The stub works out which tree is ours *itself*, on every call, by walking
+`[local_index] -> player_table -> +0x9CC`. Nothing has to tell it. Outside a
+match that player slot is null, the walk short-circuits, and every call passes
+through - so an armed stub with no match running changes nothing. This used to
+be a pointer the client published into the stub's scratch page, and publishing
+it lost the race every time: the game researches the earlier epochs'
+technologies while a match loads, before a tech tree is resolvable from
+outside, and a benefit already applied cannot be taken back.
 
 This and WinHook are the only places the client writes to the game's code. It
-is in memory only, and `restore()` puts the original call back.
+is in memory only, and `restore()` puts the original call back - which the
+client does on the way out, so closing it hands the game back unpatched.
 """
 
 from __future__ import annotations
@@ -49,7 +58,11 @@ TREE_CONTEXT = 0x534
 
 SCRATCH = 0x1000
 _CODE = 0x00                    # the suppression stub
-_TREE = 0x80                    # the local player's tech tree, or 0 for "off"
+# 0x80 held the local player's tech tree, back when the client published it.
+# The stub resolves that for itself now and the slot is unused - but it is left
+# unclaimed rather than closed up, because `adopt()` recognises a stub from an
+# older client by comparing it byte for byte, and shifting the slots below
+# would move the addresses baked into the code and break that match.
 _COUNT = 0x84                   # effect calls skipped, for diagnostics
 _LAST = 0x88                    # id of the last technology suppressed
 _DONE = 0x8C                    # set by the grant stub once it returns
@@ -205,8 +218,8 @@ class TechEffects:
             self.scratch = self.proc.alloc(SCRATCH) or None
             if self.scratch is None:
                 return False
-            # Off until a tech tree is published, so arming alone is inert.
-            self.proc.write(self.scratch + _TREE, struct.pack("<I", 0))
+            # Nothing is suppressed until `set_suppressible` publishes the id
+            # table, so arming on its own is inert.
             self.proc.write(self.scratch + _COUNT, struct.pack("<I", 0))
             self.proc.write(self.scratch + _LAST, struct.pack("<I", 0))
         stub = self._stub(self.scratch)
@@ -224,13 +237,6 @@ class TechEffects:
             return True
         self.proc.protect(CALL_SITE, PATCH_LEN)
         return self.proc.write(CALL_SITE, ORIGINAL)
-
-    def set_local_tree(self, tree: int | None) -> bool:
-        """Suppress effects for this tech tree, or none when given None."""
-        if self.scratch is None:
-            return False
-        return self.proc.write(self.scratch + _TREE,
-                               struct.pack("<I", tree or 0))
 
     # --- granting --------------------------------------------------------
 

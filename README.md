@@ -9,7 +9,7 @@ This project supports single-player skirmish in the GOG and Steam releases of **
 ## What is shuffled?
 
 - **Epochs.** Advancing is controlled by `Epoch: <name>` items instead of the usual two-building requirement. Epochs still have to be reached in order and still cost their normal in-game resources.
-- **Buildings and units.** Building 20 building types and recruiting any of the 218 unit types can send checks. Units that would normally become obsolete stay available, so checks do not disappear as you advance.
+- **Buildings and units.** Building 19 building types and recruiting any of the 203 unit types can send checks. Units that would normally become obsolete stay available, so checks do not disappear as you advance.
 - **Technologies.** Each of the 100 technologies can be a check. Researching sends the check; its effect returns as a `Tech:` item through Archipelago.
 - **Building unlocks.** With `building_unlocks` enabled, 17 buildings are removed from the build menu until their `Unlock: <building>` item arrives.
 - **Wonders.** When using a wonder goal, each completed wonder is a check.
