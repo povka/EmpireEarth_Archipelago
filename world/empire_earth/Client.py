@@ -540,7 +540,7 @@ class EmpireEarthContext(CommonContext):
             self.win_hook = WinHook(proc)
             self.gate = BuildingGate(proc, self.roster, self.epochs)
             self.research = ResearchWatch(proc, self.roster, self.epochs)
-            self.obsolescence = Obsolescence(proc, self.epochs)
+            self.obsolescence = Obsolescence(proc, self.epochs, self.roster)
             self.tech_effects = TechEffects(proc, prof)
             self.settings_forced = False
             self.peace_announced = False

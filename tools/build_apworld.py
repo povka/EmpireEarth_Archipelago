@@ -1,47 +1,46 @@
 """Validate world/empire_earth and package it as empire_earth.apworld.
 
-An .apworld is a plain zip of the world package with the package directory as
-its top-level folder - nothing about it needs a source checkout of Archipelago
-or the launcher.
+    python tools/build_apworld.py            # check and build
+    python tools/build_apworld.py --check    # validate only
 
-    python tools/build_apworld.py     # check and build
-    python tools/build_apworld.py --check   # validate only
+An .apworld is a zip of the world package with the package directory at the
+top. Nothing about it needs an Archipelago checkout or the launcher.
 
-The result is written to the repository root, and that is all it does. Where
-Archipelago keeps `custom_worlds` differs by platform, install method and
-version, so copying the file there is left to you rather than guessed at - a
-build that silently writes an apworld somewhere nothing loads it is worse than
-one that hands you the file.
+The result goes to the repository root and that is all it does. That's
+deliberate — where Archipelago keeps `custom_worlds` differs by platform,
+install method and version, and a build that quietly writes an apworld
+somewhere nothing loads it is worse than one that hands you the file.
 
-Runs on any platform. The world generates anywhere - `__init__.py` imports the
-client lazily, so nothing platform-specific loads during generation - which is
-what lets a non-Windows machine build this and host a multiworld.
+Runs anywhere. `__init__.py` imports the client lazily, so nothing
+platform-specific loads during generation, which is what lets a non-Windows
+machine build this and host a multiworld.
 
-Nothing is packaged until five checks pass, because a world that fails to
-import does not announce itself: Archipelago simply never registers the client
-component, and the launcher silently opens its own window instead. That cost an
-afternoon once.
+## What gets checked
 
-    1. every file compiles
-    2. every `from .Module import name` names something that module defines
-    3. the data modules import for real, with Archipelago's own modules stubbed
-    4. no two checks, and no two items, share an id
-    5. nothing needs a Python newer than 3.11, the oldest Archipelago supports
-    6. no name is read that nothing binds
+Six things, because a world that fails to import doesn't announce itself.
+Archipelago just never registers the client component and the launcher opens
+its own window instead. That cost an afternoon once.
 
-Check 3 catches a data table changing shape, such as adding a field to
-`TECHNOLOGIES` while another module still unpacks the old arity. Check 4 exists
-because id blocks silently overflow into each other. Check 5 is static only -
-this machine has no 3.11 to run against.
+1. every file compiles
+2. every `from .Module import name` names something that module defines
+3. the data modules import for real, with Archipelago's own modules stubbed
+4. no two checks, and no two items, share an id
+5. nothing needs a Python newer than 3.11, the oldest Archipelago supports
+6. no name is read that nothing binds
 
-All of them cover the `test` package as well, even though it is deliberately
-left out of the packaged apworld. Checking only what ships is how the tests
-came to import a name that had been deleted, with nothing to say so.
+Check 3 catches a table changing shape — adding a field to `TECHNOLOGIES`
+while another module still unpacks the old arity. Check 4 exists because id
+blocks silently overflow into each other. Check 5 is static only; there is no
+3.11 on this machine to run against.
 
-Check 6 closes what used to be the admitted gap here - a name used inside a
-function but never imported. `__init__.py` cannot be imported by check 3,
-because it pulls in Archipelago itself, so `LocationProgressType.EXCLUDED`
-compiled, passed everything, and failed at generation.
+Check 6 closes what used to be an admitted gap: a name used inside a function
+and never imported. `__init__.py` can't be imported by check 3, because it
+pulls in Archipelago itself, so `LocationProgressType.EXCLUDED` compiled,
+passed everything, and died at generation.
+
+All six cover the `test` package too, even though it's deliberately left out of
+the packaged apworld. Checking only what ships is how the tests came to import
+a name that had been deleted with nothing to say so.
 """
 
 from __future__ import annotations

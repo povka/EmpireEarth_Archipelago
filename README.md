@@ -1,138 +1,149 @@
 # Empire Earth Archipelago
 
-Play **Empire Earth: The Art of Conquest** as part of an [Archipelago](https://archipelago.gg) multiworld.
+Play **Empire Earth: The Art of Conquest** in an [Archipelago](https://archipelago.gg) multiworld.
 
-Advance through the epochs, build your empire, recruit units, and research technology to send checks. The things that let you progress — epoch advances and, optionally, building unlocks — can arrive from any player in the seed.
+Advancing an epoch stops being something you do and becomes something you find. Building, recruiting and researching send checks. Everything else arrives from the seed.
 
-This project supports single-player skirmish in the GOG and Steam releases of **Empire Earth Gold**. It is an early release, but intended to be playable.
+---
 
-## What is shuffled?
+## What gets shuffled
 
-- **Epochs.** Advancing is controlled by `Epoch: <name>` items instead of the usual two-building requirement. Epochs still have to be reached in order and still cost their normal in-game resources.
-- **Buildings and units.** Building 22 building types and recruiting any of the 247 unit types can send checks. No check disappears as you advance: units that would simply expire stay recruitable, and where a later tier replaces an earlier one, recruiting the replacement sends the earlier unit's check too — a Simple Bowman sends Slinger's, a Long Bow sends every archer below it.
-- **Technologies.** Each of the 100 technologies can be a check. Researching sends the check; its effect returns as a `Tech:` item through Archipelago.
-- **Building unlocks.** With `building_unlocks` enabled, 20 buildings and every wonder are removed from the build menu until their `Building: <building>` or `Wonder: <name>` item arrives.
-- **Wonders.** Wonders are gated by `Wonder: <name>` items, under the same `building_unlocks` option as buildings. Building one sends no check — finding the item is the reward, and raising the wonder is what you do with it.
-- **Resources.** Food, wood, stone, gold, and iron bundles are credited to your stockpile when received.
+- **Epochs** — `Epoch: <name>` items replace the usual two-building requirement. Order and resource costs are unchanged.
+- **Buildings and units** — 22 building types and 248 unit types can send checks.
+- **Technologies** — all 100. Researching sends the check; the effect comes back as a `Tech:` item.
+- **Building unlocks** — with `building_unlocks` on, 18 buildings and all 9 wonders leave your build menu until their `Building:` or `Wonder:` item arrives.
+- **Resources** — food, wood, stone, gold and iron bundles land in your stockpile on receipt.
 
-You choose a starting epoch, a goal epoch, and whether the goal is reaching that epoch, building wonders, or either one.
+No check can expire. Units that would normally be withdrawn stay recruitable, and where a later tier replaces an earlier one the replacement carries the earlier check too — a Simple Bowman sends Slinger's, a Long Bow sends every archer below it. That's deliberate — a per-unit check you can miss by advancing an epoch is a check that can strand the run.
 
-You also declare what kind of map you intend to play, with `map_terrain`. Empire Earth decides part of your build menu from the terrain — a land-only map has no Dock, and a space map replaces the Dock with a Space Dock rather than adding one — and the client never picks your map, so the seed has to be told. Checks the terrain rules out are left out. Nothing enforces it, so start a match that matches what you chose.
+Building a wonder sends nothing. The `Wonder:` item is the reward and raising the wonder is what you do with it.
+
+---
 
 ## Requirements
 
-- Empire Earth: The Art of Conquest, included with [Empire Earth Gold on GOG](https://www.gog.com/game/empire_earth_gold_edition) or [Steam](https://store.steampowered.com/app/254760/Empire_Earth_Gold_Edition/)
-- [Archipelago 0.6.7 or newer](https://github.com/ArchipelagoMW/Archipelago/releases)
-- Windows for playing. Building, generating, and hosting work on other platforms; Wine/Proton play is untested.
+- **Empire Earth: The Art of Conquest** — from [GOG](https://www.gog.com/game/empire_earth_gold_edition) or [Steam](https://store.steampowered.com/app/254760/Empire_Earth_Gold_Edition/)
+- **Archipelago 0.6.7 or newer** — [releases](https://github.com/ArchipelagoMW/Archipelago/releases)
+- **Windows** — to play. Building, generating and hosting work anywhere; Wine and Proton are untested.
 
-No game files are patched or replaced. The client reads and writes the running game's memory to enforce item locks and report checks.
+Nothing is patched. The client reads and writes the running game's memory.
+
+---
 
 ## Install and play
 
 1. Download `empire_earth.apworld` from Releases.
-2. Put it in Archipelago's `custom_worlds` folder, default:
-   - Windows: `C:\ProgramData\Archipelago\custom_worlds`
-   - Linux: `~/Archipelago/custom_worlds`
-3. Restart the Archipelago Launcher.
-4. Copy [`yaml/EmpireEarth.yaml`](yaml/EmpireEarth.yaml) to your Archipelago `Players` folder and set your slot name and options.
-5. Generate and host the multiworld normally.
-6. Open **Empire Earth Client** from the Archipelago Launcher and connect to the room.
-7. Start a single-player skirmish. Choose your map type and civilisation; the client applies the remaining match settings from your YAML.
+2. Drop it in Archipelago's `custom_worlds` — `C:\ProgramData\Archipelago\custom_worlds` on Windows, `~/Archipelago/custom_worlds` on Linux.
+3. Restart the Launcher.
+4. Copy [`yaml/EmpireEarth.yaml`](yaml/EmpireEarth.yaml) into `Players` and set your slot name and options.
+5. Generate and host as normal.
+6. Open **Empire Earth Client** from the Launcher and connect.
+7. Start a single-player skirmish. You pick the map and civilisation; the client applies the rest from your YAML.
 
-The client detects the game automatically and reconnects after returning to the menu or starting another match.
+The client finds the game on its own and reconnects when you return to the menu or start another match.
+
+**Warning:** don't run the client in multiplayer against other people. It writes to the game process.
 
 ### Steam: run the Launcher as administrator
 
-The Steam release starts Empire Earth elevated by default. Windows does not allow a normal process to inspect an elevated one, so the client will wait forever for the game or report that it cannot open it.
+The Steam build starts elevated, and Windows won't let a normal process inspect an elevated one. The client will sit there waiting for a game that's already running.
 
-Run the **Archipelago Launcher as administrator before starting Empire Earth**. The GOG release normally does not need this.
+Start the **Archipelago Launcher as administrator before Empire Earth**. GOG doesn't need this.
 
-## Important game behaviour
-
-- The client can hold Empire Earth's own victory and defeat screens off. This prevents an AI defeat or an in-game wonder victory from ending an Archipelago run early. `prevent_match_end` controls this.
-- A skirmish still needs an opponent. Use `allied` opponents for a peaceful game; they share vision, but will not attack.
-- Match settings from the YAML are enforced while the client runs. Map choice and civilisation are intentionally left to the player.
-- Cheat codes are always disabled.
-- Archipelago messages can be shown on Empire Earth's message line with `ingame_messages`.
+---
 
 ## Options
 
-The complete commented template is [`yaml/EmpireEarth.yaml`](yaml/EmpireEarth.yaml). The important options are:
+Full commented template: [`yaml/EmpireEarth.yaml`](yaml/EmpireEarth.yaml).
 
-| Option | Description |
-|---|---|
-| `goal` | `reach_epoch`, `wonder_victory`, or `either`. |
-| `starting_epoch` | Epoch at the start of the skirmish. |
-| `goal_epoch` | Highest epoch available in the seed and the target for an epoch goal. |
-| `building_unlocks` | Put building permissions in the item pool. |
-| `technology_checks` | Turn research into checks and technology effects into items. |
-| `wonders_for_victory` | Wonders needed for a wonder goal. Use `0` for `reach_epoch`; use `1`–`6` for a wonder or either goal. |
-| `map_terrain` | `land_only`, `land_and_water`, or `space` — the kind of map you will play. The seed only offers checks that map can build, so start a match that matches. |
-| `opponents` | `hostile` for a normal AI or `allied` for a non-hostile opponent. |
-| `prevent_match_end` | Prevent Empire Earth from ending the match through its own win/loss rules. |
-| `ingame_messages` | Display received items and AP status messages in game. |
-| `apply_ingame_win` | End the match as a victory after Archipelago completion. |
-| `bundle_size` | Amount of each resource in one bundle. |
+- **`goal`** — `reach_epoch`, `wonder_victory`, or `either`
+- **`starting_epoch`** — where the skirmish begins
+- **`goal_epoch`** — the highest epoch in the seed, and the target for an epoch goal
+- **`building_unlocks`** — put building and wonder permissions in the item pool
+- **`technology_checks`** — turn research into checks and effects into items
+- **`wonders_for_victory`** — `0` for `reach_epoch`, otherwise how many wonders finish the run
+- **`map_terrain`** — `land_only`, `land_and_water`, or `space`
+- **`opponents`** — `hostile` for a normal AI, `allied` for one that won't attack
+- **`prevent_match_end`** — stop Empire Earth ending the match by its own win and loss rules
+- **`ingame_messages`** — show received items on the game's message line
+- **`apply_ingame_win`** — end the match as a victory once Archipelago is complete
+- **`bundle_size`** — how much of a resource one bundle is worth
 
-`map_size`, `resources`, `game_variant`, `difficulty`, `game_speed`, `unit_limit`, `reveal_map`, `use_custom_civs`, `lock_teams`, and `lock_speed` map directly to skirmish setup settings.
+`map_size`, `resources`, `game_variant`, `difficulty`, `game_speed`, `unit_limit`, `reveal_map`, `use_custom_civs`, `lock_teams` and `lock_speed` map straight onto skirmish setup.
+
+### Telling the seed what map you'll play
+
+`map_terrain` is the one thing the seed can't work out for itself. The client forces map *size* but never map choice, so you have to say.
+
+Terrain decides part of your build menu. A land-only map has no Dock. A space map *replaces* the Dock with a Space Dock rather than adding one, and does the same to the Navy Yard and the Pharos Lighthouse. Checks the terrain rules out are left out of the seed entirely.
+
+Nothing enforces it. Start a match that matches what you picked, or you'll be holding checks nobody can send.
+
+---
 
 ## How the logic stays valid
 
-Every check is tagged with the epoch and, where applicable, producer building it needs. For example, a Siege Factory check cannot be considered reachable until the player has both reached the Dark Age and received its building unlock. The same applies to units and technologies that depend on a particular producer.
+Every check carries the epoch it needs and, where one applies, the building that produces it. `Build Siege Factory` isn't reachable until you've reached the Dark Age *and* received its unlock. Units inherit the same treatment through their producer, technologies through the building that researches them.
 
-That matters in a multiworld: the generator cannot hide `Epoch: Bronze Age` behind a location that itself cannot be reached until Bronze Age. Checks beyond the selected goal epoch are omitted entirely.
+That's what stops the generator hiding `Epoch: Bronze Age` behind a check that needs the Bronze Age. Anything past your goal epoch is left out rather than shipped as a check you can't send.
 
-Wonders are counted only after construction completes. The game’s end epoch is also capped at the goal epoch, so a loaded save cannot bypass the seed’s progression.
+A few checks are real but not guaranteed — a unit only one civilisation fields, a building nobody has confirmed in a build menu. Those stay in the seed and are marked so the fill never puts anything load-bearing on them.
+
+Wonders count only once construction finishes. The match's end epoch is capped at your goal epoch, so a loaded save can't skip past the seed.
+
+---
 
 ## Troubleshooting
 
-**The client says “Waiting for Empire Earth to start.”**  Make sure `EE-AOC.exe` is running under the same Windows account. On Steam, run the Archipelago Launcher as administrator.
+**"Waiting for Empire Earth to start."** — `EE-AOC.exe` needs to be running under the same Windows account. On Steam, elevate the Launcher.
 
-**The game is running, but the client cannot open it.**  The game and the Launcher have different privilege levels. Elevate the Launcher, or disable the executable’s administrator compatibility setting.
+**The game is running and the client can't open it.** — privilege mismatch. Elevate the Launcher, or turn off the executable's administrator compatibility setting.
 
-**“No memory profile matches this build.”**  The executable does not match a supported GOG or Steam Art of Conquest build. NeoEE is not supported.
+**"No memory profile matches this build."** — the executable isn't a supported GOG or Steam Art of Conquest build.
 
-**Items are not doing anything.**  Resource and progression items are applied once a skirmish is active. Items received while at the menu wait until the next match.
+**Items aren't doing anything.** — they apply once a skirmish is live. Anything received at the menu waits for the next match.
 
-**The game minimises.**  Empire Earth minimises when it loses focus. It also renders at the primary monitor’s resolution; moving it to a larger secondary monitor scales the image instead of changing its render resolution.
+**The game minimises.** — it does that on focus loss. It also renders at the primary monitor's resolution, so dragging it to a bigger second monitor scales the image rather than sharpening it.
+
+---
 
 ## Building the apworld
 
-Only needed if you are changing the world. Install Python 3.10 or newer, then run:
+Only if you're changing the world. Python 3.10 or newer:
 
 ```bash
 python tools/build_apworld.py
 ```
 
-On Windows, use `py` if `python` is not on your `PATH`.
+Use `py` on Windows if `python` isn't on your `PATH`. The build validates, then writes `empire_earth.apworld` to the repo root — you copy it to `custom_worlds` yourself. Where Archipelago keeps that folder differs by platform and install method, and a build that writes an apworld somewhere nothing loads it is worse than one that hands you the file.
 
-The command validates the world and writes `empire_earth.apworld` to the repository root. Copy it to `custom_worlds` yourself and restart the Launcher.
+`--check` validates without building. Six checks run before anything is packaged: every file compiles, every relative import names something real, the data modules import for real, no two ids collide, nothing needs a Python newer than 3.11, and no name is read that nothing binds.
 
-```bash
-python tools/build_apworld.py --check
-```
+For the memory layouts, offsets and the approaches that didn't work, see [`notes/REVERSE.md`](notes/REVERSE.md).
 
-Use `--check` to validate without producing an apworld. The build checks Python syntax, internal imports, and the structure of the generated data tables.
+---
 
-For the game-memory work, object data, and discarded approaches behind the project, see [`notes/REVERSE.md`](notes/REVERSE.md).
+## What it won't do
 
-## Current limitations and roadmap
+- **Run on the base game or NeoEE.** GOG and Steam Art of Conquest only. Buy the game.
+- **Work in multiplayer against people.** It writes to the game process.
+- **Verify your map choice.** `map_terrain` is you telling the seed what you'll play, and nothing checks you meant it.
+- **Guarantee every unit epoch.** Building epochs come from the running game's tech tree. Some unit epochs still come from `dbobjects.dat`, which reads high about as often as it reads right lol
+- **Colour its in-game messages.** Still on the list.
 
-- GOG and Steam Art of Conquest are supported. The base game and NeoEE are not.
-- Do not use the client in multiplayer games against other people. It writes to the running game process.
-- Potential future check sources include quantity milestones, heroes, and prophet calamities.
-- Building epochs have been verified against the tech tree. Some unit epochs still come from `dbobjects.dat` and need further validation.
-- In-game message colours are still a future improvement.
+---
 
 ## Credits
 
 - **Stainless Steel Studios** and **Sierra** for Empire Earth.
-- [Archipelago](https://github.com/ArchipelagoMW/Archipelago) for the multiworld framework and world API.
+- [**Archipelago**](https://github.com/ArchipelagoMW/Archipelago) for the multiworld framework and world API.
 - **Mark Adler** for [`blast.c`](https://github.com/madler/zlib/tree/master/contrib/blast), ported here to read PKWARE-imploded `data.ssa` entries.
-- **GOG.com** for the DirectX 1–7 wrapper used by Empire Earth Gold.
-- The [Empire Earth Fandom wiki](https://empireearth.fandom.com/wiki) for useful reference material.
-- [capstone](https://www.capstone-engine.org/), [pefile](https://github.com/erocarrera/pefile), and [numpy](https://numpy.org/) for reverse-engineering tools used during development. They are not required to run the world.
+- **GOG.com** for the DirectX 1–7 wrapper Empire Earth Gold ships with.
+- The [**Empire Earth Fandom wiki**](https://empireearth.fandom.com/wiki), which settled several unit lines the game's own data couldn't.
+- [**capstone**](https://www.capstone-engine.org/), [**pefile**](https://github.com/erocarrera/pefile) and [**numpy**](https://numpy.org/) for the reverse-engineering tools. Not needed to run the world.
+
+---
 
 ## AI disclosure
 
-Claude was used as an assistance tool during development. The memory layouts, offsets, and supporting research are documented in [`notes/REVERSE.md`](notes/REVERSE.md).
+Claude was used as an assistance tool during development. The memory layouts, offsets and supporting research are in [`notes/REVERSE.md`](notes/REVERSE.md).

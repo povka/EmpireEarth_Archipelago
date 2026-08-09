@@ -1,7 +1,7 @@
-"""Hide buildings you have not found the Archipelago unlock for.
+"""Hide buildings you haven't found the unlock for yet.
 
-`EETechTreeNode + 0x06` is what decides whether an object appears in a build
-menu. The consumer is the node's own vtable[1] at `0x005CF686`:
+`EETechTreeNode + 0x06` decides whether an object appears in a build menu. Its
+consumer is the node's own vtable[1] at `0x005CF686`:
 
     cmp byte [esi+6], 0          ; this byte - zero means unavailable
     je  unavailable
@@ -12,18 +12,17 @@ menu. The consumer is the node's own vtable[1] at `0x005CF686`:
     cmp [esi+0x14], eax          ; the node's own epoch requirement
     jg  unavailable
 
-Two things follow. The epoch requirement is a *separate* test in the same
-predicate, so clearing `+0x06` gates a building without disturbing the game's
-own epoch rules - `Building: Siege Factory` in the Copper Age still will not let
-you build one until the Bronze Age. And `+0x20`, which correlates beautifully
-with availability, is never read; writing it does nothing, which is why three
-theories about it all failed before the predicate was disassembled.
+Two things follow from that. The epoch requirement is a *separate* test in the
+same predicate, so clearing `+0x06` gates a building without touching the
+game's own epoch rules — `Building: Siege Factory` in the Copper Age still
+won't let you build one before the Bronze Age. And `+0x20`, which correlates
+beautifully with availability, is never read. Writing it does nothing, which is
+how three theories about it survived until someone disassembled the predicate.
 
 Nodes are found by scanning for their vtable. Every player owns a full copy of
-the tree, so `node + 0x0C` - the owning `EETechTree` - is what picks out the
-local player's. A node is identified by its button's icon texture, the only
-handle any of these structures offers; neither the object database nor the
-node's `+0x08` state object carries a name.
+the tree, so `node + 0x0C` — the owning `EETechTree` — picks out yours. A node
+is identified by its button icon, the only handle these structures offer:
+neither the object database nor the node's `+0x08` state object carries a name.
 """
 
 from __future__ import annotations
@@ -39,10 +38,9 @@ NODE_EPOCH = 0x14            # epoch requirement, vs TREE_EPOCH
 TREE_EPOCH = 0x538           # the tech tree's current epoch
 BUTTON_TEXTURE = 0x04        # UString, e.g. 'textures\\but_barracks.sst'
 
-# A node is identified only by its button's icon, and most buildings follow
-# `but_<lowercased name>.sst`. These five do not, because the icon kept the
-# name an earlier draft of the game used - a Siege Factory's icon still says
-# "siege workshop", and the Cyber buildings' still say "mech".
+# Most buildings follow `but_<lowercased name>.sst`. These five kept the name
+# an earlier draft used — a Siege Factory's icon still says "siege workshop",
+# and the Cyber buildings' still say "mech".
 TEXTURE_ALIASES = {
     "Archery Range": "but_archery",
     "Cyber Factory": "but_mech factory",
@@ -56,10 +54,10 @@ TEXTURE_ALIASES = {
     "Space Dock": "but_spacedock_15t",
     "Space Turret": "but_turret_15t",
 
-    # The wonders. Not one of them follows the rule, which is why gating them
-    # first time out found no node for any of the nine and left them all
+    # The wonders. Not one follows the rule, which is why the first attempt at
+    # gating them found no node for any of the nine and left them all
     # buildable. Read out of `data.ssa`'s texture list rather than guessed:
-    # they drop spaces entirely, `Tower of Babylon` is stored the other way
+    # spaces are dropped entirely, `Tower of Babylon` is stored the other way
     # round, the Lighthouse is "of" Alexandria rather than "at", and the
     # Coliseum's icon is misspelled with two Ls in the game's own assets.
     "Coliseum": "but_colliseum",
@@ -71,14 +69,13 @@ TEXTURE_ALIASES = {
     "Tower of Babylon": "but_babylontower",
     # Art of Conquest's, which do carry an epoch suffix like the unit icons.
     "Orbital Space Station": "but_orbital_15t",
-    # `Future Research Sentinel` is deliberately absent. The only candidate is
-    # `but_sentinelmech_15t`, and `but_sentinel_00t` belongs to something else
-    # - probably the Sentinel infantry - so the pair cannot be told apart from
-    # the names alone. A wrong icon here does not fail loudly: it would gate
-    # whatever that node really is, and if that turned out to be a unit, its
-    # check would sit behind a wonder item and could strand a seed. One wonder
-    # staying buildable is the cheaper mistake, and the client names it in the
-    # "no tech tree node found" line.
+    # `Future Research Sentinel` is deliberately absent. The candidates are
+    # `but_sentinelmech_15t` and `but_sentinel_00t`, one of which is probably
+    # the Sentinel infantry, and the names alone can't separate them. A wrong
+    # icon here fails quietly: it would gate whatever that node really is, and
+    # if that turned out to be a unit its check would sit behind a wonder item
+    # and could strand a seed. One wonder staying buildable is the cheaper
+    # mistake, and the client names it in the "no tech tree node found" line.
 }
 
 # BuildingEpochs.py is generated from this very field, so a node for the right

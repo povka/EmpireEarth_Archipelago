@@ -321,8 +321,7 @@ Substituted wonders need no special case here, because `map_terrain`
         from .Epochs import EPOCH_NAMES
 
         # A check is only in the seed if this run can actually reach the epoch
-        # that unlocks it - there is no point offering "Build Cyber Factory" in
-        # a game that stops at the Dark Age.
+        # that unlocks it - aka space age check can't be earlier
         wanted = self.included_object_locations()
         wanted |= {f"Reach {EPOCH_NAMES[i]}" for i in self.included_epochs()}
 

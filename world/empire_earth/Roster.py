@@ -1,11 +1,11 @@
-"""Read what the player currently owns, by type name.
+"""Read what the player owns, by type name.
 
 The roster is an array of `(EEComplexUnit*, count)` pairs at `player + 0x40`.
 Each unit points at its type definition at `+0x2C`, and the definition holds
-its name as a UWideString at `+0x1C` - the same name used in the game's
-`db\\dbobjects.dat`, so it maps onto the generated Objects.py tables directly.
+the object's name at `+0x18` — the same name `dbobjects.dat` uses, so it drops
+onto the generated Objects.py tables with no id translation.
 
-Only reads are performed here; nothing in this module writes to the game.
+Reads only. Nothing here writes to the game.
 """
 
 from __future__ import annotations
@@ -88,28 +88,28 @@ class Roster:
         """Addresses of every EEComplexUnit the local player owns.
 
         The array is sparse and its end is not marked. Two earlier versions
-        tried to find that end by counting empty slots, and each was wrong in
-        one direction:
+        looked for that end by counting empty slots. Each was wrong in one
+        direction:
 
-        * Stopping after 128 empties stopped *inside* the array. Reported from
-          a live game as an Archery Range, a Chariot Archer and a hero that
-          sent no check while a Capitol and a Domestic Wolf sent theirs.
-        * Not stopping swept the heap beyond it, where other players' objects
-          live. Every one is a real EEComplexUnit with a readable name, so they
-          were reported as the player's own and a run's worth of checks nobody
-          had earned went to the server, where they cannot be taken back.
+        - Stopping after 128 empties stopped *inside* the array. An Archery
+          Range, a Chariot Archer and a hero all sent no check while a Capitol
+          and a Domestic Wolf sent theirs.
+        - Not stopping swept the heap past it, where other players' objects
+          live. Every one is a real EEComplexUnit with a readable name, so the
+          AI's buildings were reported as the player's and a run's worth of
+          unearned checks went to the server, where you can't take them back.
 
-        Neither is needed, because an object says who owns it: `+0x18` is the
-        owning player object. Measured against a live match - every object of
-        the local player held the local player object there, every object of
-        each AI held theirs, and 118 foreign objects lying past the end of the
-        array were rejected on that basis alone, nothing misclassified.
+        Neither is needed. An object says who owns it: `+0x18` is the owning
+        player object. Measured live — every object of the local player held
+        the local player object, every AI's held theirs, and 118 foreign
+        objects lying past the array were rejected on that alone with nothing
+        misclassified.
 
         So the sweep is deliberately generous and ownership decides. Sweeping
-        past the end also turns up the player's *own* objects again, listed in
-        other structures - all six in that match reappeared around slot 26,400
-        - so results are deduplicated by address, or `/roster` would count each
-        of them twice.
+        past the end also turns up your *own* objects a second time, listed in
+        other structures — all six in that match reappeared around slot 26,400
+        — so results are deduplicated by address. Without that `/roster` counts
+        everything twice.
         """
         obj = self.player_object()
         if obj is None:

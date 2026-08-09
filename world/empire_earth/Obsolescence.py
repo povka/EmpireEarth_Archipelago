@@ -1,12 +1,10 @@
 """Stop Empire Earth retiring units when you advance an epoch.
 
-Normally a unit is withdrawn once a later tier replaces it: a Rock Thrower
-stops being offered at the Barracks the moment you leave the Copper Age. That
-makes a per-unit check missable - reach the next epoch without having built one
-and it can never be sent - which would be fine for filler and fatal for
-anything the run needs.
+A unit is withdrawn once a later tier replaces it. A Rock Thrower leaves the
+Barracks the moment you leave the Copper Age, and a per-unit check you can miss
+that way is one that strands the run.
 
-The engine decides this in `EETechTreeNode` vtable[2], `0x005CF742`:
+`EETechTreeNode` vtable[2] at `0x005CF742` decides it:
 
     xor  eax, eax
     cmp  byte [ecx+5], al        ; superseded outright?
@@ -17,37 +15,41 @@ The engine decides this in `EETechTreeNode` vtable[2], `0x005CF742`:
     jge  not_obsolete
     obsolete: return 1
 
-So there are two ways to be retired - and only one of them is this module's
-business, which took a bug to establish. The two fields are not the same kind
-of thing:
+Two fields, two different things:
 
-    +0x18   an expiry date: "no longer offered after epoch N"
-    +0x05   a replacement: "this specific later unit has taken over"
+    +0x18   an expiry: "not offered after epoch N"
+    +0x05   a replacement: "this specific later unit took over"
 
-Clearing the expiry is right, and is what keeps a Rock Thrower recruitable for
-the whole match. Clearing the replacement is not: it does not preserve the old
-unit beside its successor, it *cancels the upgrade*. Observed in play - upgrade
-a Slinger to a Simple Bowman, advance one more epoch, and the Archery Range is
-offering Slingers again. That also left the Simple Bowman's own check
-unsendable, and unit checks carry progression, so it could strand a seed.
+Only `+0x18` gets written. That's deliberate — clearing `+0x05` doesn't keep the
+old unit beside its successor, it cancels the upgrade. Upgrade a Slinger to a
+Simple Bowman, advance once more, and the Archery Range is offering Slingers
+again with the Simple Bowman's own check now unsendable. Units get replaced as
+the game intends and the replacement carries the replaced check instead, in
+`Locations.LOCATION_ALSO_SENDS`.
 
-So only `+0x18` is written now. Units still get replaced, exactly as the game
-intends, and the check that would have been lost is carried by the replacement
-instead: recruiting a Simple Bowman sends Slinger's check too
-(`Locations.LOCATION_ALSO_SENDS`, built by tools/gen_upgrades.py).
+Technologies are skipped entirely, which took a second stranded run to work
+out. A technology chain can share one button and be separated only by epoch —
+all seven wall and tower upgrades carry `but_upgrade wall and tower` — and the
+engine retires the current tier so the next can take the slot. Held open
+forever, the slot never advances and the later tiers never appear. That killed
+a two-player run with `Epoch: Industrial Age` sitting on the Middle Ages
+upgrade.
 
-This needs no name for anything. Every node on the local player's tree is
-written, which sidesteps the problem that only 43 of 178 units can be tied to a
-node at all - the icons the tree uses do not match database names.
+So `_scan` drops any node whose icon belongs to a technology. Everything else
+still needs no name: only 43 of 178 units can be tied to a node at all, which
+is why this writes to nodes rather than to a list of units.
 
-Buildings are included and it costs nothing: the three that carry an expiry
-(`but_archery`, `but_stable`, `but_tower`) each have a second node without one,
-so they were never going to disappear anyway.
+Buildings come along for free. The three carrying an expiry (`but_archery`,
+`but_stable`, `but_tower`) each have a second node without one, so they were
+never going to disappear anyway.
 """
 
 from __future__ import annotations
 
 import struct
+
+NODE_BUTTON = 0x10           # EEButtonObject, whose +0x04 is the icon
+BUTTON_TEXTURE = 0x04
 
 NODE_VTABLE = 0x00846150
 NODE_SIZE = 0x30
@@ -61,9 +63,12 @@ NEVER = 15                   # what a unit that never expires already holds
 class Obsolescence:
     """Holds every node on the local player's tree permanently available."""
 
-    def __init__(self, proc, epochs):
+    def __init__(self, proc, epochs, roster):
         self.proc = proc
         self.epochs = epochs
+        # Only for reading a node's icon, which is the sole handle these
+        # structures offer for telling a technology from a unit.
+        self.roster = roster
         self._tree: int | None = None
         self._nodes: list[int] = []
         self._epoch: int | None = None
@@ -80,8 +85,29 @@ class Obsolescence:
     def written(self) -> int:
         return self._written
 
+    def _tech_textures(self) -> set[str]:
+        try:
+            from .Technologies import TECHNOLOGIES
+        except ImportError:          # loaded as a top-level module by tools/
+            from Technologies import TECHNOLOGIES
+        return {v[2] for v in TECHNOLOGIES.values()}
+
     def _scan(self, tree: int) -> list[int]:
-        """Every node on this tree. Swept once, then reused."""
+        """Every node on this tree that is *not* a technology.
+
+        Technologies are deliberately left exactly as the game keeps them, and
+        clearing their expiry breaks them. Several form chains that share one
+        button and are separated only by epoch - the seven wall and tower
+        upgrades all carry `but_upgrade wall and tower` - and the engine
+        retires the current tier so the next can take the slot. Held open
+        forever, the slot never advances: reported from a two-player run as the
+        tower upgrade button never appearing, with `Epoch: Industrial Age`
+        sitting on the Middle Ages one, which ended the run.
+
+        A node is identified the only way these structures allow, by its
+        button icon.
+        """
+        tech = self._tech_textures()
         found = []
         needle = struct.pack("<I", NODE_VTABLE)
         for base, data in self.proc.snapshot(want_image=False, want_private=True,
@@ -93,8 +119,18 @@ class Obsolescence:
                     break
                 if off % 4 or off + NODE_SIZE > len(data):
                     continue
-                if struct.unpack_from("<I", data, off + NODE_TREE)[0] == tree:
-                    found.append(base + off)
+                if struct.unpack_from("<I", data, off + NODE_TREE)[0] != tree:
+                    continue
+                button = struct.unpack_from("<I", data, off + NODE_BUTTON)[0]
+                if button:
+                    texture = self.roster.read_uwstring(button + BUTTON_TEXTURE)
+                    if texture:
+                        stem = texture.split("\\")[-1].lower()
+                        if stem.endswith(".sst"):
+                            stem = stem[:-4]
+                        if stem in tech:
+                            continue      # a technology; leave it alone
+                found.append(base + off)
         return found
 
     def apply(self) -> int:

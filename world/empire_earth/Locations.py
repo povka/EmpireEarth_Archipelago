@@ -97,21 +97,29 @@ _WONDERS_ORDERED = sorted(WONDERS.items())
 # Technologies a seed never offers, because the game does not reliably offer
 # them either. Empty, and that is the finding rather than an oversight.
 #
-# `Oracle` was listed here for one afternoon. It was reported missing from a
-# live Temple, and the run was stuck behind `Building: Hospital` sitting on its
-# check - but checking vanilla Art of Conquest afterwards found it exactly
-# where every source said it would be, a Bronze Age Temple technology beside
-# Monotheism. The button appears below the others and had been overlooked.
+# `Oracle` was listed here for one afternoon, and taking it out again is the
+# reason this comment is long.
 #
-# Excluding it would have deleted a real check and, worse, hidden a client bug
-# had there been one. There is not: nothing here clears a technology node's
-# availability. `BuildingGate` only writes `+0x06` on nodes whose icon matches
-# a gated building or wonder exactly, and `but_oracle_04` matches none.
+# It was reported missing from a live Temple, with a run stuck behind
+# `Building: Hospital` sitting on its check, so it looked exactly like a
+# technology the game does not offer. Checking vanilla Art of Conquest found it
+# where every source said it would be - a Bronze Age Temple technology beside
+# Monotheism - which was the first sign the absence was not the game's doing.
 #
-# The mechanism stays because the hazard is real - units and buildings have
-# both turned out to have members the game does not offer - but a name only
-# belongs here on evidence stronger than one absence, since the cost of being
-# wrong is a check that quietly leaves the pool.
+# It was almost certainly ours. Temple technologies form chains that share one
+# button and are separated only by epoch, the same way the wall and tower
+# upgrades do, and `Obsolescence` was clearing the expiry on every node in the
+# tree. An earlier tier that never retires keeps the slot, so the next one
+# never appears. That is fixed in Obsolescence.py, and Oracle ships.
+#
+# The lesson is the one worth keeping: an absence in game is not evidence about
+# the game until the client has been ruled out. Excluding Oracle would have
+# deleted a real check *and* hidden the bug that was eating it - and the same
+# bug was independently stranding runs on the tower upgrades.
+#
+# The mechanism stays, because the hazard is real: units and buildings have
+# both turned out to have members no skirmish offers. But a name belongs here
+# only on evidence that survives that question.
 EXCLUDED_TECHNOLOGIES: frozenset[str] = frozenset()
 
 # One check per technology. Technologies are left exactly where the game puts
@@ -153,6 +161,11 @@ EXCLUDED_UNIT_NAMES = frozenset({
     "Hero Bulldog Ramsey (Morale)",
     "h Greek Captain",
     "h Lt. Stock",
+    # Scenario-only, reported from play. It carries no `x ` prefix - the
+    # database's marker for its other scenario records - and sits in the
+    # Aircraft Carrier family beside the Enterprise, indistinguishable by any
+    # field.
+    "s11 Japanese Flattop Carrier",
 })
 
 
