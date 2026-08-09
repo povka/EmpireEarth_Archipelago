@@ -2,8 +2,8 @@
 
 Ids are handed out in blocks with a base per kind, so a kind that outgrows its
 block silently starts issuing ids that already mean something else. The
-technology block held exactly 100 technologies against 100 slots before the
-unit block was moved out to 1000.
+technology block held exactly 100 technologies against 100 slots before the unit
+block moved out to 1000.
 """
 
 from ..Epochs import EPOCH_NAMES
@@ -33,9 +33,9 @@ class TestTables(EmpireEarthTestBase):
     def test_every_unit_has_a_check(self):
         """A unit with no check is a unit that can never be sent.
 
-        `Inf01 - Rock Thrower` had none for a while: units were taken from a
-        hand-written list of families that did not include its own, so
-        recruiting one sent nothing and the player had no way to tell.
+        `Inf01 - Rock Thrower` had none for a while. Units came from a
+        hand-written list of families that didn't include its own, so recruiting
+        one sent nothing and you had no way to tell.
         """
         missing = [db for db in ALL_RECRUITABLE
                    if db not in RECRUIT_LOCATION_BY_DBNAME]
@@ -48,8 +48,8 @@ class TestTables(EmpireEarthTestBase):
     def test_hero_pairs_are_symmetric_and_real(self):
         """Each hero of a tier must send the other's check, both ways.
 
-        Only one of the two can exist in a match, so a one-way pairing would
-        leave the other side unsendable - which is the state this replaced.
+        Only one of the two can exist in a match, so a one-way pairing leaves
+        the other side unsendable — which is the state this replaced.
         """
         for name, partner in PAIRED_LOCATIONS.items():
             self.assertIn(name, LOCATION_NAME_TO_ID)

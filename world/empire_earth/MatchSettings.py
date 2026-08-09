@@ -22,17 +22,16 @@ across launches.
     0x00931662  Use Custom Civs   0 or 1
     0x0093165C  Victory Allowed   0 or 1  (not on the setup screen; see below)
 
-The checkbox bytes are NOT in screen order, are not contiguous, and the run of
-bytes they sit in holds things that are not checkboxes: 0x0093165C reacts to
-nothing on the setup screen, so it is never written. Each box was confirmed by
-toggling it on its own and seeing which byte moved
-(tools/watch_checkboxes.py) - the top-to-bottom order looked obvious and was
-wrong for every one of the five.
+The checkbox bytes are NOT in screen order, are not contiguous, and the run
+they sit in holds things that aren't checkboxes — 0x0093165C reacts to nothing
+on the setup screen, so it's never written. Each box was confirmed by toggling
+it on its own and watching which byte moved (`tools/watch_checkboxes.py`). The
+top-to-bottom order looked obvious and was wrong for all five.
 
 Map Type is deliberately absent. The field at 0x0093160C tracks it but is a
-derived property rather than the selector - Large Islands and Planets Earth
-both settle at 13, Planets Mars and Planets Small both at 18 - so writing it
-would not select a map.
+derived property rather than the selector — Large Islands and Planets Earth
+both settle at 13, Planets Mars and Planets Small both at 18 — so writing it
+wouldn't select a map.
 
 Values were recovered by setting every dropdown to a distinct value and reading
 the block back; see notes/REVERSE.md.
@@ -57,34 +56,33 @@ DIFFICULTY = 0x00931654
 CHECKBOX_BASE = 0x0093165C
 
 # Not a checkbox and not on the setup screen at all, which is why toggling
-# every box left this byte alone. It is a registry-backed game option
+# every box left this byte alone. It's a registry-backed game option
 # (HKCU\Software\Mad Doc Software\EE-AOC\Game Options, "Victory Allowed"),
 # read at startup with a default of 1.
 #
-# Found by disassembly rather than by scanning: the loader at 0x00535780 reads
+# Found by disassembly rather than scanning. The loader at 0x00535780 reads
 # the options into consecutive bytes of one global, and the offsets it uses for
 # Lock Teams (+0x405), Lock Speed (+0x406) and Cheat Codes (+0x408) all resolve
 # against base 0x00931258 to the addresses those checkboxes were empirically
 # found at. "Victory Allowed" is +0x404 of the same object.
 #
-# Held at 0 so the game cannot end the match on its own. Without it a run dies
-# early three ways that have nothing to do with the seed's goal: you wipe the
+# Held at 0 so the game can't end the match on its own. Without it a run dies
+# early three ways that have nothing to do with the seed's goal — you wipe the
 # AI, the AI wipes you, or someone completes a wonder victory. The wonder goal
 # is unaffected because the client counts wonders itself.
 VICTORY_ALLOWED = 0x0093165C
 
-# name -> address. Each was confirmed by toggling that box alone; they are not
-# in screen order, are not contiguous, and the run they sit in contains
-# non-checkbox bytes, so they are addressed individually rather than by
-# position.
+# name -> address. Each one confirmed by toggling that box alone. They're not
+# in screen order, not contiguous, and the run they sit in holds non-checkbox
+# bytes, so they're addressed individually rather than by position.
 CHECKBOXES: dict[str, int] = {
     "lock_teams": 0x0093165D,
     "lock_speed": 0x0093165E,
     "reveal_map": 0x0093165F,
     "cheat_codes": 0x00931660,
     "use_custom_civs": 0x00931662,
-    # Not a checkbox, but the same shape - a single 0/1 byte in the same block -
-    # so it rides the same read/write path.
+    # Not a checkbox, but the same shape — a single 0/1 byte in the same
+    # block — so it rides the same read/write path.
     "victory_allowed": VICTORY_ALLOWED,
 }
 
@@ -110,14 +108,14 @@ RESOURCE_SETS = (
 )
 DIFFICULTIES = ("Easy", "Medium", "Hard")
 GAME_SPEEDS = ("Slow", "Standard", "Fast", "Very Fast")
-# The one setting that is not 0-based.
+# The one setting that isn't 0-based.
 GAME_VARIANTS = {1: "Tournament", 2: "Standard"}
 VARIANT_TO_VALUE = {"tournament": 1, "standard": 2}
 
 UNIT_LIMIT_MIN, UNIT_LIMIT_MAX, UNIT_LIMIT_STEP = 50, 1200, 50
 
-# Sanity bounds: a write is refused if the desired value is out of range, so a
-# bad option can never poke an arbitrary number into the game.
+# Sanity bounds. A write is refused when the desired value is out of range, so
+# a bad option can't poke an arbitrary number into the game.
 LIMITS: dict[str, tuple[int, int]] = {
     "game_speed": (0, len(GAME_SPEEDS) - 1),
     "map_size": (0, len(MAP_SIZES) - 1),
@@ -180,8 +178,8 @@ class MatchSettings:
     def plausible(self) -> bool:
         """True if the block currently holds values that make sense.
 
-        Guards against writing into a process whose layout is not what we
-        expect - every int field must already be inside its own valid range.
+        Guards against writing into a process whose layout isn't what we
+        expect. Every int field has to already be inside its own valid range.
         """
         cur = self.read()
         if not cur:

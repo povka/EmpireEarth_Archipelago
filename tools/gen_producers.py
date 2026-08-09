@@ -3,21 +3,21 @@
 Gating buildings behind Archipelago items needs this. A `Recruit <family>`
 check is only reachable if you can build something that produces that family,
 so without it generation is free to hide `Building: Stable` behind
-`Recruit Lancer` - the same circular placement that once put
+`Recruit Lancer` — the same circular placement that once put
 `Epoch: Bronze Age` on `Build Siege Factory`.
 
-The relationship is not in dbobjects.dat: building records carry no train list,
+The relationship isn't in `dbobjects.dat`. Building records carry no train list
 and unit records carry no producer, so every apparent reference there is a small
 integer that happens to collide with a building index.
 
-It is in `technology_tree.pdf`, which ships with the game. Page 2 lists every
+It's in `technology_tree.pdf`, which ships with the game. Page 2 lists every
 unit in eleven tables, each headed by the category that produces it ("Archers",
 "Ships & Subs", "Siege & Artillery (Epochs IV-VI)"), so a unit's producer is
-just the heading of the table it is listed in.
+just the heading of the table it's listed in.
 
 Page 1 of the same PDF is a flow chart whose rows are also per-producer, but
-its rows are uneven and unmarked - there are no separator rules or row boxes in
-the vector layer - so every way of inferring a row boundary put units near the
+its rows are uneven and unmarked — there are no separator rules or row boxes in
+the vector layer — so every way of inferring a row boundary put units near the
 edges in the wrong row (Spitfire under Siege Factory, Priest under Town
 Center). The tables need no such inference.
 
@@ -25,8 +25,8 @@ Center). The tables need no such inference.
 
 A family is produced by ANY of its buildings, not all of them, so the rule this
 feeds is a disjunction. That makes a spurious producer the dangerous kind of
-error - it would tell logic a building you cannot use is good enough - which is
-why ambiguous labels are dropped rather than guessed.
+error — it tells logic a building you can't use is good enough — which is why
+ambiguous labels get dropped rather than guessed.
 """
 import argparse
 import collections
@@ -62,14 +62,14 @@ OUT = os.path.join(ROOT, "world", "empire_earth", "Producers.py")
 # Table heading -> the building(s) that produce everything listed under it.
 # A unit is buildable if you have ANY of them, so these sets are unions.
 HEADING_BUILDINGS = {
-    # This one table covers two different producers, so it is split below by
-    # unit rather than unioned - a Priest does not come from a Town Center.
+    # This one table covers two different producers, so it's split below by
+    # unit rather than unioned — a Priest doesn't come from a Town Center.
     #
     # `Settlement` is deliberately NOT here, though it was once. The heading
-    # names two buildings and a Settlement is neither: it trains nothing at all
-    # until five citizens garrison in it and it becomes a Town Center, which is
-    # what BUILDING_PREREQS already models. Listing it claimed citizens and
-    # Canine Scouts could be made at one.
+    # names two buildings and a Settlement is neither. It trains nothing until
+    # five citizens garrison in it and it becomes a Town Center, which is what
+    # BUILDING_PREREQS already models. Listing it claimed citizens and Canine
+    # Scouts could be made at one.
     "Town Center / Capitol Units & Temple Units":
         ("Town Center", "Capitol"),
     "Archers": ("Archery Range",),
@@ -87,23 +87,23 @@ HEADING_BUILDINGS = {
 #
 # `Ship Galley` is every galley and galleon from Copper to Royal. The tables
 # list warships by hull name under headings the matcher reads, but these seven
-# appear nowhere in them; the flow chart on page 1 puts them with the rest of
-# the navy. They are warships and come from the same places every other warship
+# appear nowhere in them. The flow chart on page 1 puts them with the rest of
+# the navy. They're warships and come from the same places every other warship
 # does. Written down rather than inferred, because a wrong producer here is the
-# dangerous direction: it would tell logic a check is reachable when it is not.
+# dangerous direction — it tells logic a check is reachable when it isn't.
 FAMILY_FALLBACK = {
     "Ship Galley": ("Dock", "Navy Yard"),
 
-    # Art of Conquest's Space Age families. The tables predate the expansion so
-    # they carry no heading for any of these; the producers are reported from
-    # the game itself - a Space Dock builds the Space Capital Ship, the Space
+    # Art of Conquest's Space Age families. The tables predate the expansion,
+    # so they carry no heading for any of these. The producers come from the
+    # game itself — a Space Dock builds the Space Capital Ship, the Space
     # Carrier, the Space Transporter and the Space Corvette.
     #
-    # `Space Fighter` is the family that mixes: its Planetary Fighter comes
+    # `Space Fighter` is the family that mixes — its Planetary Fighter comes
     # from the Airport and its Spy Satellite from the Capitol, both handled per
     # unit in Locations.UNIT_PRODUCER_OVERRIDES. The Space Dock stands as the
-    # family's default for `Sp15 - Space Fighter`, which is the one member
-    # nothing else accounts for.
+    # family's default for `Sp15 - Space Fighter`, the one member nothing else
+    # accounts for.
     "Spaceship": ("Space Dock",),
     "Space Corvette": ("Space Dock",),
     "Space Fighter": ("Space Dock",),
@@ -150,19 +150,19 @@ TEMPLE_UNITS = ("Priest", "Prophet")
 # `Balloon` is the whole reason this exists. It matches the two balloons, which
 # the database files under `Helicopter` along with the gunships and transports,
 # so one label handed a Capitol and a Town Center to every helicopter in the
-# game. That is the dangerous direction: a Capitol is never lockable, so
+# game. That's the dangerous direction — a Capitol is never lockable, so
 # `buildings_needed_for` concluded a helicopter needs no Airport unlock at all,
 # and `Building: Airport` could then be placed behind one.
 #
 # Dropping the label leaves the family with the Airport it gets from the
 # Aircraft table. If a balloon really is built at a Town Center, requiring the
-# Airport is merely stricter than the game; the reverse would be a check that
-# cannot be sent.
+# Airport is merely stricter than the game. The reverse is a check that can't
+# be sent.
 SHARED_TABLE_SKIP = ("Balloon",)
 
 # `x `-prefixed records are scenario and campaign props, not units a skirmish
-# can ever produce. Counting them would let a family look obtainable from a
-# building that cannot in fact produce any of its real members.
+# can ever produce. Counting them lets a family look obtainable from a building
+# that can't actually produce any of its real members.
 REAL_NAMES = {n: f for n, f in UNIT_FAMILY_BY_NAME.items()
               if not n.startswith("x ")}
 
@@ -257,7 +257,7 @@ def main():
         '"""Which building produces each unit family.',
         "",
         "Generated by tools/gen_producers.py from the technology_tree.pdf that",
-        "ships with the game; do not edit by hand.",
+        "ships with the game. Don't edit by hand.",
         "",
         "A family is produced by ANY of the buildings listed for it, so the rule",
         "built from this is a disjunction. Without it, generation could hide a",

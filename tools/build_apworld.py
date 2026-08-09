@@ -267,7 +267,7 @@ def check_ids() -> list[str]:
     """No two checks, and no two items, may share an id.
 
     Ids are handed out in blocks with a base per kind, so a kind that outgrows
-    its block starts issuing ids that already mean something else - and nothing
+    its block starts issuing ids that already mean something else — and nothing
     complains, it simply resolves to the wrong check. The technology block held
     exactly 100 technologies against 100 slots when this was written.
     """

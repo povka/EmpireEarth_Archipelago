@@ -3,8 +3,8 @@
 Empire Earth refuses to start a skirmish with fewer than two players, and
 refuses to let them all share a team, so a run always begins with a hostile
 opponent. Both of those checks live in the Start Game validator and run before
-the match exists - but stance is per-player state inside the match, so it can be
-set afterwards, when there is nothing left to validate.
+the match exists. Stance is per-player state inside the match, so you can set
+it afterwards, when there's nothing left to validate.
 
 Each player object carries an array of stances indexed by the target's player
 slot:
@@ -13,10 +13,10 @@ slot:
 
 The encoding is pinned by every player reading 0 toward itself. Found by
 snapshotting the player objects, allying with the AI through the diplomacy
-screen, and diffing: exactly one dword moved.
+screen, and diffing — exactly one dword moved.
 
-Stance is one-directional. Allying from your side stops you attacking the AI;
-it does not stop the AI attacking you, so peace has to be written both ways.
+Stance is one-directional. Allying from your side stops you attacking the AI,
+it doesn't stop the AI attacking you, so peace has to be written both ways.
 """
 
 from __future__ import annotations
@@ -27,8 +27,8 @@ STANCE_STRIDE = 4
 ALLIED = 0
 HOSTILE = 1
 
-# Slot 0 is neutral nature - the animals. Left alone deliberately: making them
-# friendly would change how the map plays, which is not what peace is for.
+# Slot 0 is neutral nature, the animals. Left alone deliberately — making them
+# friendly changes how the map plays, which isn't what peace is for.
 GAIA_SLOT = 0
 
 
@@ -83,9 +83,9 @@ class Diplomacy:
     def plausible(self) -> bool:
         """True if the array looks like stances.
 
-        Every player must read allied toward itself and every entry must be a
-        known value, or this is not the array we think it is and nothing is
-        written.
+        Every player has to read allied toward itself and every entry has to
+        be a known value, or this isn't the array we think it is and nothing
+        gets written.
         """
         players = self.players()
         if len(players) < 2:
@@ -103,8 +103,8 @@ class Diplomacy:
     def force_peace(self) -> list[str]:
         """Set mutual peace between the local player and every opponent.
 
-        Returns a description of anything actually changed, so a caller can stay
-        quiet on the polls where there is nothing to do.
+        Returns a description of anything actually changed, so a caller can
+        stay quiet on the polls where there's nothing to do.
         """
         changed: list[str] = []
         local = self.local_slot()

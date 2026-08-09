@@ -59,19 +59,19 @@ class Opponents(Choice):
     """
     What the client does about the computer players.
 
-    Empire Earth will not start a skirmish without an opponent and will not let
-    everyone share a team, and an opponent cannot be removed afterwards either:
-    they cannot be killed, eliminated, starved, or switched off. So the choice
-    is only about how they behave.
+    Empire Earth won't start a skirmish without an opponent, won't let everyone
+    share a team, and won't let you remove one afterwards — they can't be
+    killed, eliminated, starved or switched off. So the only choice is how they
+    behave.
 
     `hostile` leaves the game alone. The AI plays normally and can hurt you, but
-    it cannot end your run - the victory conditions are held off separately by
-    `prevent_match_end` - so the worst it can do is cost you your buildings.
+    it can't end your run, because `prevent_match_end` holds the victory
+    conditions off separately. The worst it manages is costing you buildings.
 
-    `allied` holds both sides' diplomatic stance at allied, about half a second
-    into the match, so it never fights you at all. The catch is that allies
-    share line of sight, so its exploration uncovers your map. Pick this if you
-    would rather not be attacked than keep the fog.
+    `allied` holds both sides at allied about half a second into the match, so
+    it never fights you. The catch is that allies share line of sight, so its
+    exploration uncovers your map. Pick it if you'd rather not be attacked than
+    keep the fog.
     """
 
     display_name = "Opponents"
@@ -85,12 +85,12 @@ class MapTerrain(Choice):
     What kind of map you intend to play. The seed builds its logic around it.
 
     Empire Earth decides some of your build menu from the terrain, and this is
-    the one thing a seed cannot see for itself - map choice is left to you, so
+    the one thing a seed cannot see for itself — map choice is left to you, so
     you have to tell it. Pick the wrong one and checks in the seed may be
     impossible to send, which can strand a run.
 
     `land_and_water` is the ordinary case. Docks and Navy Yards exist, and so
-    does everything they build - frigates, transports, battleships, galleys,
+    does everything they build — frigates, transports, battleships, galleys,
     submarines and carriers.
 
     `land_only` is a map with no water at all. There is no Dock and no Navy
@@ -103,7 +103,7 @@ class MapTerrain(Choice):
     are gone and the Space Dock's own craft take their place.
 
     Start a match that matches what you picked. Nothing enforces it, because
-    the client does not choose your map - it only believes you.
+    the client does not choose your map — it only believes you.
     """
 
     display_name = "Map Terrain"
@@ -121,7 +121,7 @@ class PreventMatchEnd(DefaultOnToggle):
     that have nothing to do with your goal: you wipe the AI out, the AI wipes
     you out, or a wonder victory fires. With this on, the client holds the
     game's "Victory Allowed" option off, so only Archipelago decides when you
-    are done. The wonder goal still works - the client counts wonders itself.
+    are done. The wonder goal still works — the client counts wonders itself.
 
     Turn it off if you would rather play with the game's own win and loss
     conditions live. Your seed survives a match ending either way: checks are
@@ -135,7 +135,7 @@ class TechnologyChecks(DefaultOnToggle):
     """
     Make researching a technology a check.
 
-    Adds one check per technology - a hundred of them across the full fourteen
+    Adds one check per technology — a hundred of them across the full fourteen
     epochs, at the Capitol, Temple, University, Hospital and Granary. Nothing
     about researching changes: the buttons stay exactly where the game puts
     them, cost the same, and give their usual benefit.
@@ -157,12 +157,12 @@ class BuildingUnlocks(DefaultOnToggle):
     Copper Age does not let you build one until the Dark Age, because the game
     checks the epoch separately.
 
-    This changes the shape of a run considerably - units are produced at
-    buildings, so a locked Stable means no cavalry - and it adds eighteen
+    This changes the shape of a run considerably — units are produced at
+    buildings, so a locked Stable means no cavalry — and it adds eighteen
     progression items, so seeds take longer to finish.
 
     Capitol is never locked: every match starts with one, and it is what makes
-    citizens. The Farm is not locked either - it has no build-menu entry the
+    citizens. The Farm is not locked either — it has no build-menu entry the
     client can hold shut.
     """
 
@@ -181,7 +181,7 @@ class Goal(Choice):
 
     `either` completes on whichever you manage first. It is the most forgiving,
     but it also means the seed is logically beatable as soon as wonders are, so
-    epoch unlocks stop being required to finish - they are still needed to reach
+    epoch unlocks stop being required to finish — they are still needed to reach
     everything else.
     """
 

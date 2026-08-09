@@ -1,24 +1,25 @@
 """Notice when a technology has been researched.
 
 `EETechTreeNode + 0x04` is the byte the game sets once a technology is done.
-It was found by measurement rather than inspection: snapshot every node,
-research exactly one thing, diff. Twice, with a different technology each time,
-and only that node's `+0x04` moved.
+Found by measurement rather than inspection — snapshot every node, research
+exactly one thing, diff. Twice, with a different technology each time, and only
+that node's `+0x04` moved.
 
-Two neighbouring fields look like they should mean this and do not.
+Two neighbouring fields look like they should mean this and don't.
 
 `+0x22` is set on the same seven entries in every player's tree *and* in the
 static template tree that belongs to nobody, so it marks entries switched off
 for the game mode, not research.
 
 `+0x21` is the byte that removes a researched technology from its menu.
-Clearing `+0x04` alone does not bring the button back; clearing `+0x21` as well
-does. So `+0x04` records that the work is done and `+0x21` is what acts on it -
-worth knowing, but this module only reads.
+Clearing `+0x04` alone doesn't bring the button back, clearing `+0x21` as well
+does. So `+0x04` records that the work is done and `+0x21` acts on it — worth
+knowing, though this module only reads.
 
 Nothing here writes to the game. Technologies stay exactly where Empire Earth
-puts them, cost what they always cost, and give their usual benefit; the only
-change is that finishing one sends a check.
+puts them and cost what they always cost; withholding the benefit is
+`TechEffects`' job, not this module's. All that changes here is that finishing
+one sends a check.
 """
 
 from __future__ import annotations
@@ -47,11 +48,11 @@ class ResearchWatch:
     def scan(self, keys) -> dict[tuple[str, int], int]:
         """(texture, epoch) -> node address, for the local player's tree.
 
-        Keyed on the pair because a texture is not unique: the seven wall and
+        Keyed on the pair because a texture isn't unique — the seven wall and
         tower upgrades share one, and only the node's epoch separates them.
 
         Cached per match. Every player owns a full copy of the tree, so
-        `node+0x0C` is what picks out ours; without it we would report the AI's
+        `node+0x0C` is what picks ours out. Without it we'd report the AI's
         research as our own.
         """
         tree = self.epochs.tech_tree()
@@ -106,5 +107,5 @@ class ResearchWatch:
         return done
 
     def missing(self, keys) -> list[str]:
-        """Technologies whose node was not found, for diagnostics."""
+        """Technologies whose node wasn't found, for diagnostics."""
         return sorted(f"{t}@{e}" for t, e in set(keys) - set(self.scan(keys)))

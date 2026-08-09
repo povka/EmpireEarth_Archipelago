@@ -1,10 +1,10 @@
 """Epoch gating for Empire Earth.
 
-Normally a player may advance whenever they can pay for it. This turns the
-advance into an Archipelago unlock: receiving "Epoch: Stone Age" is what lets
-you press Advance in the Capitol. Resource costs are untouched, and epochs
-still have to be taken in order - unlocking one early just sits in the
-background until you get there.
+Normally you advance whenever you can pay for it. This turns the advance into
+an Archipelago unlock — receiving `Epoch: Stone Age` is what lets you press
+Advance in the Capitol. Resource costs are untouched, and epochs still have to
+be taken in order, so unlocking one early just sits in the background until you
+get there.
 
 Layout, recovered from a live game (see notes/REVERSE.md):
 
@@ -18,16 +18,16 @@ Layout, recovered from a live game (see notes/REVERSE.md):
     EETechTree + 0x540           -> highest reachable epoch (the skirmish's
                                     end-epoch setting; writable to cap a match)
 
-The player's current epoch is the highest record with the "entered" bit set,
-not a counter. `EETechTree + 0x544` reads 1 in both Prehistoric and Copper Age,
-so it is not the epoch; an earlier reading of it as "the epoch being advanced
-to" came from a single sample and was wrong.
+Your current epoch is the highest record with the "entered" bit set, not a
+counter. `EETechTree + 0x544` reads 1 in both Prehistoric and Copper Age, so it
+isn't the epoch. An earlier reading of it as "the epoch being advanced to" came
+from a single sample and was wrong.
 
 Record `i` holds the requirements to ENTER epoch `i`. Normally you satisfy it by
-constructing two recruitment or technology buildings; the game evaluates that on
-each construction and caches the answer in the flag bit. Lowering `+0x40`
-afterwards does nothing, because nothing re-runs the check - the cached flag is
-what the UI reads.
+constructing two recruitment or technology buildings. The game evaluates that on
+each construction and caches the answer in the flag bit, so lowering `+0x40`
+afterwards does nothing — nothing re-runs the check, and the cached flag is what
+the UI reads.
 
 So gating is a pure data write:
 
@@ -72,8 +72,8 @@ EPOCH_BUILT = 0x48
 TREE_END_EPOCH = 0x540
 TREE_NEXT_EPOCH = 0x544
 
-# Bit 0 of an epoch's flags marks it as entered; it is set for every epoch
-# up to and including the player's current one.
+# Bit 0 of an epoch's flags marks it entered. It's set for every epoch up to
+# and including your current one.
 EPOCH_ENTERED = 0x00000001
 
 # Set once the two qualifying buildings exist; the Capitol UI reads this.
@@ -105,8 +105,8 @@ class EpochAccess:
         if tree is None or not 0 <= index < NUM_EPOCHS:
             return None
         addr = tree + EPOCH_ARRAY + index * EPOCH_STRIDE
-        # The record stores its own index; if that does not match, the layout
-        # is not what we expect and we must not write anything.
+        # The record stores its own index. If that doesn't match, the layout
+        # isn't what we expect and nothing gets written.
         if self.proc.read_i32(addr + EPOCH_INDEX) != index:
             return None
         return addr
@@ -121,9 +121,9 @@ class EpochAccess:
         and including the current one, so the highest set bit is the current
         epoch. Observed in Copper Age: records 0, 1 and 2 have it, 3+ do not.
 
-        `TREE_NEXT_EPOCH` is deliberately not used - it reads 1 both in
-        Prehistoric and in Copper Age, so it is not the epoch at all. The
-        earlier reading of it was inferred from a single sample and was wrong.
+        `TREE_NEXT_EPOCH` is deliberately not used — it reads 1 in both
+        Prehistoric and Copper Age, so it isn't the epoch at all. The earlier
+        reading of it came from a single sample and was wrong.
         """
         tree = self.tech_tree()
         if tree is None:
@@ -148,8 +148,8 @@ class EpochAccess:
     def set_highest(self, index: int) -> bool:
         """Cap the epoch the match can reach (the skirmish 'end epoch').
 
-        Writing this stops the player advancing past the seed's goal even if
-        they configured the skirmish to run all the way to Space Age.
+        Writing this stops you advancing past the seed's goal even if you set
+        the skirmish to run all the way to Space Age.
         """
         tree = self.tech_tree()
         if tree is None:
@@ -190,13 +190,13 @@ class EpochAccess:
     def apply(self, unlocked: set[int]) -> tuple[int, int]:
         """Lock every future epoch not yet unlocked. Returns (locked, opened).
 
-        Open only the *next* epoch, even if the player already holds items for
-        later ones. Empire Earth may offer a later available epoch directly;
-        opening Copper and Bronze together at Stone Age therefore permits a
-        Stone -> Bronze skip. Later items stay recorded in `unlocked`, but are
-        not applied until the player has actually entered the preceding epoch.
+        Open only the *next* epoch, even when you already hold items for later
+        ones. Empire Earth can offer a later available epoch directly, so
+        opening Copper and Bronze together at Stone Age permits a Stone ->
+        Bronze skip. Later items stay recorded in `unlocked` and aren't applied
+        until you've actually entered the epoch before them.
 
-        Epochs already entered are left alone - retracting an epoch you are
+        Epochs already entered are left alone — retracting an epoch you're
         standing in would be nonsense, and the flag there is historical.
         """
         reached = self.reached()

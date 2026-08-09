@@ -5,32 +5,51 @@ requires:
   version: 0.6.7
 
 Empire Earth:
-  # Everything below is enforced by the client while it runs: it writes these
-  # onto Empire Earth's skirmish setup screen and puts them back if you change
-  # them, so the match always matches the seed. Cheat codes are always off.
+  # The client enforces everything below while it runs. It writes these onto
+  # Empire Earth's skirmish setup screen and puts them back if you change them,
+  # so the match always matches the seed. Cheat codes are always off.
 
   # What completes the seed:
   #   reach_epoch     reach goal_epoch          (needs wonders_for_victory: 0)
   #   wonder_victory  build the wonders         (needs wonders_for_victory > 0)
   #   either          whichever you manage first
   # Empire Earth ends the match on a wonder victory, so wonders_for_victory and
-  # this option have to agree - generation refuses a seed where they do not.
+  # this option have to agree. Generation refuses a seed where they don't.
   goal: reach_epoch
 
-  # The epoch your skirmish must START in. Set by the client for you.
-  # Must come before goal_epoch. One of:
+  # The epoch your skirmish STARTS in. The client sets it for you. Has to come
+  # before goal_epoch. One of:
   #   prehistoric_age, stone_age, copper_age, bronze_age, dark_age,
   #   middle_ages, renaissance, imperial_age, industrial_age, atomic_age_ww1,
   #   atomic_age_ww2, atomic_age_modern, digital_age, nano_age
   starting_epoch: prehistoric_age
 
-  # The epoch you must reach to win. Every epoch up to and including this one
-  # becomes an unlock item and a check; anything beyond is left out entirely.
+  # The epoch you have to reach to win. Every epoch up to and including this one
+  # becomes an unlock item and a check. Anything beyond is left out entirely.
   # One of:
   #   stone_age, copper_age, bronze_age, dark_age, middle_ages, renaissance,
   #   imperial_age, industrial_age, atomic_age_ww1, atomic_age_ww2,
   #   atomic_age_modern, digital_age, nano_age, space_age
   goal_epoch: space_age
+
+  # Put building and wonder permissions in the item pool. Locked buildings
+  # leave your build menu until their `Building:` or `Wonder:` item arrives.
+  # Turn it off and you can build whatever your epoch allows.
+  building_unlocks: true
+
+  # Turn research into checks. Researching a technology sends its check and
+  # gives you nothing; the effect comes back as a `Tech:` item.
+  technology_checks: true
+
+  # Which terrain you'll play, because the seed can't work it out for itself.
+  # The client forces map size but never map choice, so you have to say.
+  #   land_only        no water, so no Dock and nothing built at one
+  #   land_and_water   the normal case
+  #   space            a Planets map, where the Space Dock and Space Turret
+  #                    REPLACE the Dock and the Tower rather than adding to them
+  # Checks the terrain rules out are left out of the seed. Nothing enforces
+  # this, so start a match that matches what you picked.
+  map_terrain: land_and_water
 
   # tiny, small, medium, large, huge, gigantic
   map_size: medium
@@ -51,9 +70,10 @@ Empire Earth:
   # Population limit, 50-1200. Rounded to the nearest 50 the game offers.
   unit_limit: 300
 
-  # Wonders needed to win, in game and in Archipelago alike. Must be 0 for the
-  # reach_epoch goal and 1-6 for the others. Above 0, each wonder built is also
-  # a check; the Time Machine only counts in a Space Age seed.
+  # Wonders needed to win, in game and in Archipelago alike. Has to be 0 for the
+  # reach_epoch goal and 1-6 for the others. Building a wonder sends no check —
+  # the `Wonder:` item is the reward and raising it is what you do with it. The
+  # Time Machine only counts in a Space Age seed.
   wonders_for_victory: 0
 
   reveal_map: false
@@ -61,16 +81,16 @@ Empire Earth:
   lock_teams: false
   lock_speed: false
 
-  # Stop Empire Earth ending the match on its own. A skirmish needs an
-  # opponent, so without this a run can be cut short by wiping the AI out, by
-  # being wiped out, or by a wonder victory - none of which is your goal. The
-  # wonder goal still works; the client counts wonders itself.
+  # Stop Empire Earth ending the match on its own. A skirmish needs an opponent,
+  # so without this a run gets cut short by wiping the AI out, by being wiped
+  # out, or by a wonder victory — none of which is your goal. The wonder goal
+  # still works, because the client counts wonders itself.
   prevent_match_end: true
 
-  # What to do about the computer player the game forces you to have. It
-  # cannot be removed - the game refuses a one-player match and refuses to
-  # let everyone share a team - and it cannot be killed, eliminated, starved
-  # or switched off afterwards either, so this only chooses how it behaves.
+  # What to do about the computer player the game forces on you. It can't be
+  # removed — the game refuses a one-player match and refuses to let everyone
+  # share a team — and it can't be killed, eliminated, starved or switched off
+  # afterwards either, so this only chooses how it behaves.
   #   hostile  - left alone; it plays normally and can cost you buildings,
   #              but prevent_match_end stops it ever ending your run
   #   allied   - never fights you at all, but allies share line of sight, so
@@ -78,20 +98,20 @@ Empire Earth:
   opponents: hostile
 
   # Show Archipelago messages on the game's own message line, the one it uses
-  # for things like "Player 'Babylon' is victorious!", prefixed --AP--. This
-  # is the only feature that runs code inside the game rather than just
-  # reading and writing its memory; no game file is touched. The on-screen
-  # overlay keeps running either way.
+  # for things like "Player 'Babylon' is victorious!", prefixed --AP--. This is
+  # the only feature that runs code inside the game rather than just reading and
+  # writing its memory. No game file is touched, and the on-screen overlay keeps
+  # running either way.
   ingame_messages: true
 
-  # When you complete the Archipelago goal, have Empire Earth end the match as
-  # a win, instead of leaving it running. Works by briefly detouring one
-  # function so the game runs its own end-of-match code; the detour undoes
-  # itself immediately and no file is touched.
+  # When you complete the Archipelago goal, have Empire Earth end the match as a
+  # win instead of leaving it running. It briefly detours one function so the
+  # game runs its own end-of-match code; the detour undoes itself immediately
+  # and no file is touched.
   apply_ingame_win: true
 
-
-  # Map Type is not on this list: the client cannot set it, so pick whichever
-  # one you like on the setup screen.
-
+  # How much of a resource one bundle is worth.
   bundle_size: 3500
+
+  # Map Type isn't on this list. The client can't set it, so pick whichever one
+  # you like on the setup screen — but see map_terrain above.

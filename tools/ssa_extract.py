@@ -27,8 +27,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from install import DEFAULT_EDITION, EDITIONS, data_ssa  # noqa: E402
 
-# Art of Conquest unless asked otherwise; `base` is the original game's, kept
-# for the base-game support that is still to come. See install.EDITIONS.
+# Art of Conquest unless asked otherwise. `base` is the original game's, kept
+# for the base-game support still to come. See install.EDITIONS.
 DEFAULT_SSA = data_ssa()
 SSA_BY_EDITION = {name: data_ssa(edition=name) for name in EDITIONS}
 
@@ -52,7 +52,7 @@ def parse(path: str):
         pos += 12
         name = raw.rstrip(b"\x00").decode("latin-1")
         if size != end - start + 1:
-            # Table ended or we lost sync; stop rather than emit garbage.
+            # Table ended, or we lost sync. Stop rather than emit garbage.
             break
         yield name, start, size
 

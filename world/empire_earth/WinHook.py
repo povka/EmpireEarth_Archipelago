@@ -11,7 +11,7 @@ part:
   releasing the victory gate made it re-evaluate and decide we had *lost*.
 * Calling the engine's end-of-match routine from an injected thread sets the
   game-over flag and then crashes. What follows walks the player table, formats
-  strings, makes a virtual call on `EEServer` and drives a screen change - none
+  strings, makes a virtual call on `EEServer` and drives a screen change — none
   of which survives being run mid-frame from outside.
 
 What works is a **one-shot detour**, so the game calls it on its own thread:
@@ -19,18 +19,19 @@ What works is a **one-shot detour**, so the game calls it on its own thread:
     0x00553082   the per-frame victory evaluation, __thiscall
     0x00551F3A   end the match: __thiscall(this, bool won), ret 4
 
-`0x00553082` already receives the real game object in `ecx` - the same value the
-engine's own call site passes to the end-of-match routine. Detour its first six
-bytes to a stub that saves `ecx`, puts the prologue back so the hook fires
+`0x00553082` already receives the real game object in `ecx` — the same value
+the engine's own call site passes to the end-of-match routine. Detour its first
+six bytes to a stub that saves `ecx`, puts the prologue back so the hook fires
 exactly once, calls the end-of-match routine, and jumps to the restored
 prologue.
 
-Six bytes, not five: the prologue is `push ebp / mov ebp,esp / sub esp,0x1c`,
-and a five-byte jump would land inside the third instruction. Restoring all six
+Six bytes, not five. The prologue is `push ebp / mov ebp,esp / sub esp,0x1c`,
+and a five-byte jump lands inside the third instruction. Restoring all six
 avoids relocating anything.
 
-This is the only place the client writes to the game's **code**. It is in memory
-only, it undoes itself the moment it fires, and nothing on disk is touched.
+This and `TechEffects` are the only places the client writes to the game's
+**code**. It's in memory only, it undoes itself the moment it fires, and
+nothing on disk is touched.
 """
 
 from __future__ import annotations
@@ -69,8 +70,8 @@ class WinHook:
         code = bytearray()
         code += b"\x89\x0d" + struct.pack("<I", this_addr)   # mov [this], ecx
         code += b"\x60\x9c"                                  # pushad; pushfd
-        # Put the prologue back first - the hook must fire once, and the jump
-        # at the end of this stub lands on it.
+        # Put the prologue back first — the hook has to fire once, and the
+        # jump at the end of this stub lands on it.
         code += b"\xc7\x05" + struct.pack("<I", HOOK_SITE) + PROLOGUE[0:4]
         code += b"\x66\xc7\x05" + struct.pack("<I", HOOK_SITE + 4) + PROLOGUE[4:6]
         code += b"\x6a" + bytes([1 if won else 0])           # push won

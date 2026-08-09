@@ -1,7 +1,7 @@
 """Hold back a technology's benefit until Archipelago sends it.
 
-Researching a technology stays exactly as the game has it - same button, same
-cost, same place - but the benefit is withheld and arrives later as an item.
+Researching a technology stays exactly as the game has it — same button, same
+cost, same place — but the benefit is withheld and arrives later as an item.
 That needs two things the engine keeps helpfully far apart.
 
 `EETechTreeNode` vtable[6] at `0x005CFA53` completes a research:
@@ -13,29 +13,29 @@ That needs two things the engine keeps helpfully far apart.
     push [eax+0x50]              ; which effect set to apply
     call 0x005CA76C              ; apply it        (0x005CFAAF)
 
-The flag and the effect are separate statements, so the flag can be left to the
-game - which is what the check watches - while the effect is skipped.
+The flag and the effect are separate statements, so the flag stays the game's
+to set — that's what the check watches — while the effect gets skipped.
 
-`0x005CA76C` is data-driven: it indexes a table at `0x0095CF80` by the effect
-set and runs each entry. Calling it later, with the same five arguments, is
-what grants the benefit.
+`0x005CA76C` is data-driven. It indexes a table at `0x0095CF80` by the effect
+set and runs each entry. Calling it later with the same five arguments is what
+grants the benefit.
 
 Only the local player is affected. At the call site `ecx` still holds the
 node's tech tree, loaded three instructions earlier and never clobbered, so the
-stub compares it against ours and lets every other player - the AI, who
-research constantly - straight through.
+stub compares it against ours and lets every other player — the AI, who
+research constantly — straight through.
 
 The stub works out which tree is ours *itself*, on every call, by walking
 `[local_index] -> player_table -> +0x9CC`. Nothing has to tell it. Outside a
 match that player slot is null, the walk short-circuits, and every call passes
-through - so an armed stub with no match running changes nothing. This used to
+through, so an armed stub with no match running changes nothing. This used to
 be a pointer the client published into the stub's scratch page, and publishing
-it lost the race every time: the game researches the earlier epochs'
+it lost the race every time — the game researches the earlier epochs'
 technologies while a match loads, before a tech tree is resolvable from
-outside, and a benefit already applied cannot be taken back.
+outside, and an applied benefit can't be taken back.
 
-This and WinHook are the only places the client writes to the game's code. It
-is in memory only, and `restore()` puts the original call back - which the
+This and WinHook are the only places the client writes to the game's code.
+It's in memory only, and `restore()` puts the original call back — which the
 client does on the way out, so closing it hands the game back unpatched.
 """
 
@@ -59,18 +59,18 @@ TREE_CONTEXT = 0x534
 SCRATCH = 0x1000
 _CODE = 0x00                    # the suppression stub
 # 0x80 held the local player's tech tree, back when the client published it.
-# The stub resolves that for itself now and the slot is unused - but it is left
-# unclaimed rather than closed up, because `adopt()` recognises a stub from an
-# older client by comparing it byte for byte, and shifting the slots below
-# would move the addresses baked into the code and break that match.
+# The stub resolves that itself now, so the slot is dead. It stays unclaimed
+# rather than closed up — `adopt()` recognises an older client's stub by
+# comparing it byte for byte, and shifting the slots below moves the addresses
+# baked into the code and breaks that match.
 _COUNT = 0x84                   # effect calls skipped, for diagnostics
 _LAST = 0x88                    # id of the last technology suppressed
 _DONE = 0x8C                    # set by the grant stub once it returns
 _GRANT = 0xA0                   # scratch for one grant call
 _TABLE = 0x400                  # bitmap of ids this client may suppress
 
-# Ids seen so far sit around 0x3E8..0x3E7F; the bitmap covers 0..0x3FFF, which
-# is 0x800 bytes. Anything outside is passed straight through.
+# Ids seen so far sit around 0x3E8..0x3E7F. The bitmap covers 0..0x3FFF, which
+# is 0x800 bytes. Anything outside passes straight through.
 MAX_ID = 0x4000
 
 
@@ -80,7 +80,7 @@ class TechEffects:
     def __init__(self, proc, profile=None):
         self.proc = proc
         self.scratch: int | None = None
-        # The stub resolves the local tech tree from these, so it does not
+        # The stub resolves the local tech tree from these, so it doesn't
         # depend on the client having seen a match yet.
         self.local_index = getattr(profile, "local_index_global", 0x009318C4)
         self.player_table = getattr(profile, "player_table", 0x00930DB4)
@@ -99,19 +99,18 @@ class TechEffects:
         """cmp ecx,[tree] / je skip / jmp apply / skip: inc count / ret
 
         The counter is what makes suppression observable. Nothing else about a
-        withheld technology is visible from outside - the effect simply never
-        happens - so without it there would be no way to tell a working hook
-        from one that silently did nothing.
+        withheld technology is visible from outside — the effect simply never
+        happens — so without it there's no way to tell a working hook from one
+        that silently did nothing.
         """
-        # Suppress:  it is our tree, the id is in range, and its bit is set.
-        # Anything else tail-jumps to the applier and behaves normally.
+        # Suppress when it's our tree, the id is in range, and its bit is
+        # set. Anything else tail-jumps to the applier and behaves normally.
         #
-        # The id test is what stops this eating things it cannot give back.
+        # The id test is what stops this eating things it can't give back.
         # Towers, walls and the ship unlocks all complete through this same
-        # routine, and none of them is a technology the seed hands out - so
+        # routine, and none of them is a technology the seed hands out, so
         # skipping their effects destroyed them outright. Only ids the client
-        # has published, meaning ones with a `Tech:` item behind them, are
-        # withheld.
+        # has published — ones with a `Tech:` item behind them — get withheld.
         suppress = (
             b"\xff\x05" + struct.pack("<I", scratch + _COUNT)     # inc [count]
             + b"\xa3" + struct.pack("<I", scratch + _LAST)        # mov [last],eax
@@ -133,10 +132,10 @@ class TechEffects:
         #     cmp ecx, eax
         #
         # Waiting for the client to publish the pointer lost the race every
-        # time: the game researches the earlier epochs' technologies while a
-        # match loads, before a tech tree is resolvable from outside, and a
-        # benefit already applied cannot be taken back. Doing it in the stub
-        # means suppression is correct from the first call.
+        # time. The game researches the earlier epochs' technologies while a
+        # match loads, before a tech tree is resolvable from outside, and an
+        # applied benefit can't be taken back. Doing it in the stub makes
+        # suppression correct from the first call.
         lead = b"\xa1" + struct.pack("<I", self.local_index)       # mov eax,[idx]
         lead += b"\x8b\x04\x85" + struct.pack("<I", self.player_table)  # mov eax,[tbl+eax*4]
         lead += b"\x85\xc0"                                        # test eax,eax
@@ -144,8 +143,8 @@ class TechEffects:
         lead += b"\x8b\x80" + struct.pack("<I", PLAYER_TECHTREE)   # mov eax,[eax+0x9CC]
         lead += b"\x3b\xc8"                                        # cmp ecx,eax
         lead += b"\x74\x05"                                        # je  -> over the tail jump
-        # Anything that is not our tree falls into the tail jump immediately
-        # after; our own calls skip it and go on to the id test.
+        # Anything that isn't our tree falls into the tail jump right after.
+        # Our own calls skip it and go on to the id test.
         code = lead
         code += b"\xe9" + struct.pack("<i", APPLY_FN - (scratch + len(code) + 5))
         head = len(code)
@@ -188,16 +187,16 @@ class TechEffects:
 
         The patch lives in the game, not in this process, so a client that
         restarts mid-match finds the call site already redirected. Returning
-        early on that leaves `scratch` unset, and every later use of it -
-        publishing the tech tree, granting anything - fails silently while
+        early on that leaves `scratch` unset, and every later use of it —
+        publishing the tech tree, granting anything — fails silently while
         still reporting success. The stub's address is recoverable from the
-        patched call, so it is adopted rather than abandoned.
+        patched call, so adopt it rather than abandon it.
         """
         raw = self.proc.read(CALL_SITE, PATCH_LEN)
         if not raw or raw == ORIGINAL or raw[0] != 0xE8:
             return False
         stub = (CALL_SITE + 5 + struct.unpack("<i", raw[1:5])[0]) & 0xFFFFFFFF
-        # Only adopt something that is byte-for-byte the stub we would build.
+        # Only adopt something that's byte-for-byte the stub we'd build.
         if self.proc.read(stub, len(self._stub(stub))) != self._stub(stub):
             return False
         self.scratch = stub
@@ -208,9 +207,9 @@ class TechEffects:
         if self.armed():
             if self.scratch is not None or self.adopt():
                 return True
-            # A stub from an older client, whose layout we no longer recognise.
-            # Leaving it in place would keep suppressing through code we cannot
-            # aim or account for, so take the call site back and arm our own.
+            # A stub from an older client, whose layout we no longer
+            # recognise. Leaving it keeps suppressing through code we can't aim
+            # or account for, so take the call site back and arm our own.
             self.restore()
         if not self.usable():
             return False
@@ -269,9 +268,9 @@ class TechEffects:
 
         Success is decided by a marker the stub writes after the call returns,
         not by the thread's exit code. The applier is a void function, so `eax`
-        on return is whatever its loop happened to leave - judging by that
-        reported failure for a call that had in fact worked, and the technology
-        was never recorded as granted.
+        on return is whatever its loop happened to leave. Judging by that
+        reported failure for a call that had worked, and the technology never
+        got recorded as granted.
         """
         if self.scratch is None:
             return False

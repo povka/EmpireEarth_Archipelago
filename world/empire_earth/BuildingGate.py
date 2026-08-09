@@ -80,7 +80,7 @@ TEXTURE_ALIASES = {
 
 # BuildingEpochs.py is generated from this very field, so a node for the right
 # building matches it exactly; the tolerance is kept only for late variants.
-# Checking it catches a texture that matched the wrong node - `but_farm_15t`
+# Checking it catches a texture that matched the wrong node — `but_farm_15t`
 # looks like a Farm but is the Space Age Robotic Farm technology, and gating it
 # would have quietly done nothing.
 EPOCH_OFFSET = 0
@@ -108,8 +108,8 @@ class BuildingGate:
         """Does any node for this building unlock in the epoch it should?
 
         The test is on the building rather than on each node. A building can
-        own several nodes - a late-epoch variant reuses the icon, and both must
-        be gated or the variant becomes a way round the lock - so what matters
+        own several nodes — a late-epoch variant reuses the icon, and both must
+        be gated or the variant becomes a way round the lock — so what matters
         is that at least one of them lands where the building is expected. When
         none does, the icon matched something else entirely, as `but_farm_15t`
         did for the Farm.

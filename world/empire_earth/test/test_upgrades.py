@@ -1,12 +1,12 @@
 """A retired unit's check must still be sendable by whatever replaced it.
 
 Empire Earth withdraws a unit when a later tier takes over, so a per-unit check
-would be missable. The client no longer fights that - cancelling the engine's
-replacement flag reverted the upgrade instead of preserving both units - so the
-replacement carries the replaced unit's check.
+would be missable. The client no longer fights that — cancelling the engine's
+replacement flag reverted the upgrade instead of keeping both units — so the
+replacement carries the replaced unit's check instead.
 
-The direction is what keeps this safe: recruiting a unit only ever sends *more*
-checks. An extra send is a free check; a missing one can strand a seed.
+The direction is what keeps this safe. Recruiting a unit only ever sends *more*
+checks: an extra send is a free check, a missing one can strand a seed.
 """
 
 from BaseClasses import LocationProgressType
@@ -24,11 +24,10 @@ from .bases import EmpireEarthTestBase
 class TestCivLockedChecks(EmpireEarthTestBase):
     """A unit only one civilisation can field must not be load-bearing.
 
-    The client leaves civilisation choice to the player, so a Cyber Ninja is
-    only recruitable by Japan or by a custom civilisation that took the right
-    power. Nothing warns a player at generation time, and discovering that
-    progression sits behind a unit your civilisation cannot build means
-    starting a fresh match.
+    The client leaves civilisation choice to you, so a Cyber Ninja is only
+    recruitable by Japan or by a custom civilisation that took the right power.
+    Nothing warns you at generation time, and finding out that progression sits
+    behind a unit your civilisation can't build means starting a fresh match.
     """
 
     options = {"goal_epoch": "space_age"}
@@ -62,9 +61,10 @@ class TestUpgradeCascade(EmpireEarthTestBase):
         """Upgrades run one way only.
 
         A cycle would mean two units each claiming to replace the other, which
-        no ordering of tiers can produce - so this is really a check that the
+        no ordering of tiers can produce. So this is really a check that the
         chain was built from tiers and not from something symmetric like the
-        hero pairing, which is deliberately two-way and lives in its own table.
+        hero pairing, which is deliberately two-way and lives in its own
+        table.
         """
         for start in LOCATION_ALSO_SENDS:
             seen, stack = set(), [start]
@@ -82,8 +82,8 @@ class TestUpgradeCascade(EmpireEarthTestBase):
         """The line this whole mechanism was written for.
 
         Slinger -> Simple Bowman -> Composite Bow -> Long Bow, which is what
-        the game's wiki describes: the Archer line "starts in the Stone age
-        with the Slinger" and "ends with Long Bow in the Middle Ages".
+        the wiki describes — the Archer line "starts in the Stone age with the
+        Slinger" and "ends with Long Bow in the Middle Ages".
         """
         self.assertEqual(
             LOCATION_ALSO_SENDS.get("Recruit Simple Bowman"),
@@ -105,10 +105,10 @@ class TestUpgradeCascade(EmpireEarthTestBase):
         """A Crossbow is not a rung on the archer ladder.
 
         It sits at the same tier as the Composite Bow and below the Long Bow,
-        so a tier-ordered rule folded it in - but the wiki is explicit that
-        "The Crossbow is the only of its line". It neither replaces anything
-        nor is replaced, so it sends only its own check and no other check
-        depends on it.
+        so a tier-ordered rule folded it in. The wiki is explicit that "The
+        Crossbow is the only of its line". It neither replaces anything nor is
+        replaced, so it sends only its own check and no other check depends on
+        it.
         """
         self.assertNotIn("Recruit Cross Bow", LOCATION_ALSO_SENDS)
         for name, extras in LOCATION_ALSO_SENDS.items():
@@ -128,9 +128,9 @@ class TestUpgradeCascade(EmpireEarthTestBase):
         """Ten units share the `Human` family and the `Inf` prefix.
 
         A tier-ordered rule read them as one ladder from Rock Thrower to Heavy
-        Mortar. None of it is guessable from the names: a Sharpshooter becomes
-        a Sniper, a Hand Cannoneer becomes a Trench Mortar, and three of the
-        ten are replaced by nothing at all.
+        Mortar. None of it is guessable from the names — a Sharpshooter becomes
+        a Sniper, a Hand Cannoneer becomes a Trench Mortar, and three of the ten
+        are replaced by nothing at all.
         """
         self.assertEqual(LOCATION_ALSO_SENDS.get("Recruit Sniper"),
                          ("Recruit Sharpshooter",))
@@ -149,7 +149,7 @@ class TestUpgradeCascade(EmpireEarthTestBase):
     def test_the_sword_line_skips_the_barbarian(self):
         """Clubman -> Maceman -> Short Sword -> Long Sword.
 
-        A Barbarian sits between the last two by tier and is not a rung: the
+        A Barbarian sits between the last two by tier and isn't a rung. The
         wiki lists Barbarians *beside* Short Swords in the Dark Age and Middle
         Ages, never as an upgrade of one.
         """
@@ -164,13 +164,13 @@ class TestUpgradeCascade(EmpireEarthTestBase):
     def test_an_upgrade_that_crosses_families(self):
         """A Stinger Soldier replaces a Bazooka Infantry.
 
-        They share neither family nor name prefix - `Land AA` against `Human` -
-        so nothing about the data connects them and the tier rule cannot see
-        the link at all. Without it the Bazooka's check died on reaching the
+        They share neither family nor name prefix — `Land AA` against
+        `Human` — so nothing in the data connects them and the tier rule can't
+        see the link at all. Without it the Bazooka's check died on reaching the
         Modern epoch.
 
-        The Grenade Launcher comes too: a cross-group link lands mid-chain, so
-        the rungs below it have to be carried or they are lost at the same
+        The Grenade Launcher comes too. A cross-group link lands mid-chain, so
+        the rungs below it have to be carried or they're lost at the same
         moment.
         """
         self.assertEqual(
@@ -194,6 +194,6 @@ class TestUpgradeCascade(EmpireEarthTestBase):
              "Recruit Imperial Frigate", "Recruit Royal Frigate",
              "Recruit Good Hope Frigate"),
         )
-        # The rung above it carries it, which is what stops it being missable.
+        # The rung above carries it, which is what stops it being missable.
         self.assertIn("Recruit Warrington",
                       LOCATION_ALSO_SENDS["Recruit Juggernaut Frigate"])

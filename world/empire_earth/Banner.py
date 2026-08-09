@@ -2,8 +2,8 @@
 
 The game's `--GAME--` banner (`--GAME-- Player 'Babylon' is victorious!`) is
 drawn by `EEUserInterface::ShowGameMessage`. Nothing about it can be reached by
-writing memory - it has to be *called* - so this allocates a page in the game,
-writes a short x86 stub, and runs it. No game file is touched; the allocation
+writing memory — it has to be *called* — so this allocates a page in the game,
+writes a short x86 stub, and runs it. No game file is touched. The allocation
 lives in the process and dies with it.
 
 The stub does what the game's own caller does:
@@ -17,9 +17,9 @@ The stub does what the game's own caller does:
 `colour` is computed exactly as the game computes it. Its meaning is unknown;
 copied verbatim it works.
 
-Everything is guarded: the bytes at the call target must match what this was
-written against, or nothing runs. That makes an unknown build fail silently
-rather than jump into the middle of some other function.
+Everything is guarded. The bytes at the call target have to match what this was
+written against, or nothing runs, so an unknown build fails silently instead of
+jumping into the middle of some other function.
 """
 
 from __future__ import annotations
@@ -37,16 +37,16 @@ ENGINE_DLL = "Low-Level Engine.dll"   # relocates; resolved at runtime
 USTRING_CTOR_RVA = 0x83BB7      # ??0UWideString@@QAE@PBD@Z  (char*)
 USTRING_DTOR_RVA = 0x83C38      # ??1UWideString@@UAE@XZ
 
-# First bytes of BANNER_FN. If these do not match, the build is not one this
-# was written for and nothing is called.
+# First bytes of BANNER_FN. If they don't match, the build isn't one this was
+# written for and nothing gets called.
 BANNER_SIG = bytes.fromhex("558bec5356576a3c8bd9")
 
 SLOT = 0x200
-# Several slots, used round-robin. The call is fired without waiting for it to
-# finish - blocking the client for even a fraction of a second per message is
-# not worth it, and waiting the full timeout stalled the watcher for five
-# seconds a line. A ring means a slow thread's data is not overwritten by the
-# next message before it has read it.
+# Several slots, used round-robin. The call fires without waiting for it to
+# finish — blocking the client for even a fraction of a second per message
+# isn't worth it, and waiting the full timeout stalled the watcher for five
+# seconds a line. A ring keeps a slow thread's data from being overwritten by
+# the next message before it has read it.
 SLOTS = 8
 SCRATCH = SLOT * SLOTS
 
@@ -57,7 +57,7 @@ _RGB, _PRE_S, _MSG_S, _PRE_O, _MSG_O, _CODE = (
 # thread still running after this is left alone rather than waited on.
 WAIT_MS = 120
 
-# The game truncates nothing for us, and a very long line would run off screen.
+# The game truncates nothing for us, and a long line runs off screen.
 MAX_TEXT = 120
 
 
@@ -152,7 +152,7 @@ class Banner:
         try:
             if not self.usable() or not self._ensure_scratch():
                 return False
-            # The display is single-line; a long message would run off screen.
+            # The display is single-line, so a long message runs off screen.
             clipped = text[:MAX_TEXT]
             base = self.scratch + self._slot * SLOT
             self._slot = (self._slot + 1) % SLOTS
@@ -164,8 +164,8 @@ class Banner:
             # Never execute a page we only think we wrote.
             if self.proc.read(base + _CODE, 16) != blob[_CODE:_CODE + 16]:
                 return False
-            # None means "still running", which is fine: the message is on its
-            # way and the slot ring keeps its data intact meanwhile.
+            # None means "still running", which is fine. The message is on
+            # its way and the slot ring keeps its data intact meanwhile.
             rc = self.proc.run_thread(base + _CODE, timeout_ms=WAIT_MS)
             return rc in (0, None)
         except Exception:

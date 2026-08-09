@@ -213,8 +213,9 @@ class GameProcess:
                 flags: int = PAGE_EXECUTE_READWRITE) -> int | None:
         """Change page protection in the target. Returns the previous flags.
 
-        Needed to write to the game's code section, which is read-only. The
-        change is to this process's pages only and disappears with it.
+        Needed to write to the game's code section, which is read-only. It
+        changes the running process's pages only, never the file on disk, and
+        goes when the game does.
         """
         old = wt.DWORD(0)
         if not k32.VirtualProtectEx(self.h, addr, size, flags, ctypes.byref(old)):
@@ -224,8 +225,8 @@ class GameProcess:
     def run_thread(self, entry: int, arg: int = 0, timeout_ms: int = 5000):
         """Run `entry` on a new thread in the target. Returns its exit code.
 
-        Returns None if the thread could not be created or did not finish in
-        time; the caller must not free the code page in that case.
+        Returns None when the thread couldn't be created or didn't finish in
+        time. Don't free the code page in that case.
         """
         tid = wt.DWORD(0)
         th = k32.CreateRemoteThread(
@@ -300,7 +301,7 @@ class GameProcess:
     def snapshot(self, **kw) -> list[tuple[int, bytes]]:
         """Read matching regions in bulk, as [(base, data), ...].
 
-        Heap objects the game allocates - tech tree nodes among them - live in
+        Heap objects the game allocates — tech tree nodes among them — live in
         MEM_PRIVATE, so a scan for one can skip the image and mapped files.
         """
         out = []

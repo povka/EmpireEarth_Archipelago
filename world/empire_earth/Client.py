@@ -1,9 +1,10 @@
-"""Archipelago client for Empire Earth / Art of Conquest.
+"""Archipelago client for Empire Earth: The Art of Conquest.
 
-Attaches to the running game and credits the player's stockpile whenever the
-multiworld sends a resource bundle. Item application is idempotent across
-reconnects: the index of the last applied item is persisted per seed+slot,
-because the server replays the full item list on every connect.
+Attaches to the running game and credits your stockpile when the multiworld
+sends a resource bundle. Applying the same item twice is harmless, which is
+what makes reconnecting safe — the index of the last applied item is stored per
+seed and slot, because the server replays the whole item list every time you
+connect.
 """
 
 from __future__ import annotations
@@ -122,8 +123,8 @@ class EmpireEarthCommandProcessor(ClientCommandProcessor):
         _owned, finished = ctx.roster.survey()
         for name, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])):
             loc = ctx.location_for(name) or "(not a check)"
-            # A type with nothing finished is still a building site, and its
-            # check is held back until something of it actually stands.
+            # A type with nothing finished is still a building site, so its
+            # check waits until one of them actually stands.
             if name not in finished:
                 loc += "  [under construction]"
             self.output(f"  {n:3d}  {name:<32s} {loc}")
@@ -148,9 +149,9 @@ class EmpireEarthCommandProcessor(ClientCommandProcessor):
                 have = "under construction"
             else:
                 have = "-"
-            # A wonder is not a check, so there is no location to ask the
-            # server about. What decides whether you can raise one is the
-            # unlock item, when this seed gates them at all.
+            # A wonder isn't a check, so there's no location to ask the
+            # server about. The unlock item decides whether you can raise one,
+            # when this seed gates them at all.
             if not ctx.gates_buildings:
                 note = ""
             elif display in ctx.unlocked_buildings:
@@ -218,28 +219,28 @@ class EmpireEarthContext(CommonContext):
         self.proc = None
         self.res: ResourceAccess | None = None
         self.epochs: EpochAccess | None = None
-        # Epoch unlocks are persistent state, not one-shot effects, so they are
-        # rebuilt from the full item list rather than tracked by applied_index.
+        # Epoch unlocks are state, not one-shot effects, so they get rebuilt
+        # from the full item list rather than tracked by applied_index.
         self.unlocked_epochs: set[int] = set()
-        # Same reasoning for buildings: an unlock is a state the client holds,
-        # so it is rebuilt from the item list on every poll.
+        # Buildings work the same way. An unlock is a state the client holds,
+        # so it gets rebuilt from the item list every poll.
         self.unlocked_buildings: set[str] = set()
         self.gate: BuildingGate | None = None
         self.gates_buildings = False
         self.gated_wonders: list[str] = []
         self.gate_announced = False
-        # Research is state too: the whole researched set is read each poll and
-        # compared against what has been sent.
+        # Research is state too. The whole researched set is read each poll
+        # and compared against what has already been sent.
         self.research: ResearchWatch | None = None
-        # Units are held permanently recruitable, so a per-unit check
-        # cannot expire when an epoch passes.
+        # Units are held permanently recruitable, so a per-unit check can't
+        # expire when an epoch passes.
         self.obsolescence: Obsolescence | None = None
         self.permanence_reported = False
         self.tech_checks = False
         self.research_announced = False
         self.sent_research: set[str] = set()
         # Technology benefits are withheld at research time and applied from
-        # items instead, so which ones have been granted is tracked here.
+        # items instead, so this tracks which ones have landed.
         self.tech_effects: TechEffects | None = None
         self.granted_techs: set[str] = set()
         self.granted_key: int | None = None
@@ -249,8 +250,8 @@ class EmpireEarthContext(CommonContext):
         # to finish before it goes live.
         self.suppression_live = False
         self.opening_reported = False
-        # False until the client has seen the game outside a match, which is
-        # what tells it a match it later finds is one that began under its eye.
+        # False until the client has seen the game outside a match. That's
+        # what tells it a match it finds later actually started under its eye.
         self.saw_match_begin = False
         # The in-game win is a one-shot detour, armed at most once per match.
         self.win_armed = False
@@ -296,7 +297,7 @@ class EmpireEarthContext(CommonContext):
 
     def on_package(self, cmd: str, args: dict):
         if cmd == "RoomInfo":
-            # Taken straight off the wire; CommonContext.seed_name is not
+            # Taken straight off the wire. CommonContext.seed_name isn't
             # reliably populated by the time we need it.
             self.seed_key = str(args.get("seed_name") or "")
         elif cmd == "Connected":
@@ -325,8 +326,8 @@ class EmpireEarthContext(CommonContext):
             self.desired_settings = self._match_settings_from(slot_data)
             self.settings_forced = False
             logger.info(f"Goal: {self.goal_description()}.")
-            # seed_name may not be populated yet depending on packet ordering,
-            # so the per-seed state file is resolved lazily instead.
+            # Packet ordering decides whether seed_name is populated yet, so
+            # the per-seed state file resolves lazily instead.
             self.state_ready = False
             logger.info(f"Connected. Bundle size {self.bundle_size}.")
 
@@ -334,8 +335,8 @@ class EmpireEarthContext(CommonContext):
         """The setup screen this seed requires.
 
         Seeds rolled before the settings options existed only carry the two
-        epochs, so those are still enforced; cheat codes are forced off either
-        way, since a seed played with cheats is not a seed anybody can compare.
+        epochs, so those still get enforced. Cheat codes are forced off either
+        way — a seed played with cheats isn't a seed anybody can compare.
         """
         wanted = dict(slot_data.get("match_settings") or {})
         wanted.setdefault("starting_epoch", self.starting_epoch)
@@ -345,10 +346,9 @@ class EmpireEarthContext(CommonContext):
         wanted["cheat_codes"] = 0
         return {k: int(v) for k, v in wanted.items()}
 
-    # Server messages are richer than anything assembled locally - they name
-    # the item and both players - so they are shown verbatim.
-    # Only things the server never reports (epoch entry, setting mismatches)
-    # are published by this client directly.
+    # Server messages name the item and both players, which beats anything
+    # assembled locally, so they go out verbatim. The client only publishes
+    # what the server never reports — epoch entry, setting mismatches.
     SKIP_MESSAGE_TYPES = {"Tutorial"}
 
     def on_print_json(self, args: dict):
@@ -364,7 +364,7 @@ class EmpireEarthContext(CommonContext):
             if not text:
                 return
             if args.get("type") == "ItemSend":
-                # Green when it is coming to us, blue when we are the source.
+                # Green when it's coming to us, blue when we're the source.
                 kind = "item" if args.get("receiving") == self.slot else "sent"
             else:
                 kind = "info"
@@ -375,8 +375,8 @@ class EmpireEarthContext(CommonContext):
     def notify(self, text: str, kind: str = "info"):
         """Announce something on the game's own message line.
 
-        `kind` is kept because callers distinguish an item from a warning, and
-        the game's message line does not - if a future surface wants to colour
+        `kind` is kept because callers tell an item apart from a warning and
+        the game's message line doesn't. If a future surface wants to colour
         them differently, the information is already here.
         """
         if self.ingame_messages and self.banner:
@@ -408,11 +408,11 @@ class EmpireEarthContext(CommonContext):
     def end_match_as_win(self):
         """Have the game end the match as a win, now the seed is finished.
 
-        Fires once per match. Declaring the goal is what triggers it, and a
-        client reconnecting to a finished seed declares it again, so without
-        this a reconnect re-ran the detour against a match that had already
-        ended. The armed flag covers the frame or two between arming the hook
-        and the game recording an outcome, which a poll can otherwise land in.
+        Fires once per match. Declaring the goal triggers it, and a client
+        reconnecting to a finished seed declares it again, so without this a
+        reconnect re-ran the detour against a match that had already ended. The
+        armed flag covers the frame or two between arming the hook and the game
+        recording an outcome, which a poll can land right in the middle of.
         """
         if not self.apply_ingame_win or not self.win_hook:
             return
@@ -435,8 +435,8 @@ class EmpireEarthContext(CommonContext):
     def _ensure_state(self) -> bool:
         """Resolve the per-seed state file once the slot name is known.
 
-        Falls back to a shared key if the server never told us a seed name, so
-        that a missing seed can never block item delivery.
+        Falls back to a shared key when the server never told us a seed name,
+        so a missing seed can't block item delivery.
         """
         if self.state_ready:
             return True
@@ -468,11 +468,11 @@ class EmpireEarthContext(CommonContext):
     def _save_applied(self):
         """Persist the applied index and which technologies are already granted.
 
-        Granting is cumulative, not idempotent - applying a technology twice
-        gives its bonus twice, which a reconnect would do for every technology
-        received so far. The granted set is therefore keyed by the match's tech
-        tree: a new match legitimately needs them all applied again, because the
-        game starts that match with none of them.
+        Granting is cumulative, not idempotent — apply a technology twice and
+        you get its bonus twice, which is what a reconnect would do for every
+        technology received so far. So the granted set is keyed by the match's
+        tech tree. A new match legitimately needs them all applied again,
+        because the game starts it with none of them.
         """
         if not self.state_file:
             return
@@ -550,8 +550,8 @@ class EmpireEarthContext(CommonContext):
     def release_game(self):
         """Undo everything that outlives this client, on the way out.
 
-        Three of the client's writes do not heal by themselves, and each leaves
-        the game in a state the player cannot get out of without restarting it:
+        Three of the client's writes don't heal by themselves, and each leaves
+        the game in a state you can't get out of without restarting it:
 
         * the effect-call detour at `0x005CFAAF`, which keeps withholding
           technology benefits with nothing left to grant them
@@ -561,12 +561,12 @@ class EmpireEarthContext(CommonContext):
 
         Best-effort by design. A client killed outright never gets here, which
         is what `TechEffects.adopt()` and `BuildingGate`'s "ask the node" rule
-        are for - both let the next client pick up a game left mid-patch.
+        are for — both let the next client pick up a game left mid-patch.
 
-        The allocated pages are deliberately *not* freed. They are 4 KB apiece
-        and the process is about to keep running without us; freeing one a game
-        thread happens to be executing would crash it, and the code patches are
-        already gone by then, so nothing new can enter them.
+        The allocated pages are deliberately *not* freed. They're 4 KB apiece
+        and the process keeps running without us. Freeing one a game thread
+        happens to be executing crashes it, and the code patches are gone by
+        then, so nothing new can enter them.
         """
         if not self.proc or not self.proc.alive:
             return
@@ -587,7 +587,7 @@ class EmpireEarthContext(CommonContext):
 
         Nothing is announced here. The server already prints a line naming the
         item and where it came from, and that line is what reaches the game, so
-        a second one from the client only says the same thing twice.
+        a second one from the client just says it twice.
         """
         if not self.res or not self._ensure_state():
             return
@@ -595,8 +595,8 @@ class EmpireEarthContext(CommonContext):
             net_item = self.items_received[self.applied_index]
             res_idx = ITEM_ID_TO_RESOURCE.get(net_item.item)
             if res_idx is None:
-                # Epoch and building unlocks are state, applied by their own
-                # gates from the full item list rather than one at a time.
+                # Epoch and building unlocks are state. Their own gates apply
+                # them from the full item list rather than one at a time.
                 self.applied_index += 1
                 continue
             if self.res.add(res_idx, self.bundle_size) is None:
@@ -610,7 +610,7 @@ class EmpireEarthContext(CommonContext):
     def refresh_epoch_unlocks(self):
         """Rebuild the unlocked set from every item the server has sent.
 
-        Idempotent by design: the server replays the whole list on reconnect,
+        Idempotent by design — the server replays the whole list on reconnect,
         and an unlock is a state, not an event.
         """
         self.unlocked_epochs = {
@@ -623,8 +623,8 @@ class EmpireEarthContext(CommonContext):
         """Keep every unit recruitable, so no check can expire.
 
         Without this a unit is withdrawn when a later tier replaces it, and a
-        check for one you never built becomes impossible to send - which now
-        matters, because these checks can hold progression.
+        check for one you never built becomes impossible to send. That matters
+        now, because these checks can hold progression.
         """
         if not self.obsolescence:
             return
@@ -644,9 +644,9 @@ class EmpireEarthContext(CommonContext):
     async def sync_research(self):
         """Send a check for every technology the player has researched.
 
-        Idempotent: it reports the whole researched set each poll and sends
-        only what has not gone yet, so a reconnect mid-match catches up rather
-        than missing everything that happened while it was away.
+        Idempotent. It reads the whole researched set each poll and sends only
+        what hasn't gone yet, so a reconnect mid-match catches up rather than
+        missing everything that happened while it was away.
         """
         if not (self.tech_checks and self.research):
             return
@@ -681,10 +681,10 @@ class EmpireEarthContext(CommonContext):
     def sync_tech_effects(self):
         """Withhold researched benefits, and apply the ones items have sent.
 
-        Two halves of one idea. The detour stops the game applying a technology
-        the moment you research it - the check still fires, because the game
-        still records the research - and every `Tech:` item received applies
-        that technology's effect instead.
+        Two halves of one idea. The detour stops the game applying a
+        technology the moment you research it, and every `Tech:` item received
+        applies that effect instead. The check fires either way, because the
+        game still records the research.
 
         Suppression is aimed at this player's tech tree only. The AI research
         constantly and must be left alone, or the match stops being a game.
@@ -703,11 +703,11 @@ class EmpireEarthContext(CommonContext):
                 return
             # Publish the ids the moment we attach, before any match exists.
             #
-            # The stub resolves the local player's tech tree by itself, so this
-            # table is the only thing it waits for - and having it in place
-            # early is what catches the research the game does while a match
-            # loads. Reading the ids from a live match instead lost that burst
-            # every time, and an applied benefit cannot be taken back.
+            # The stub resolves the local player's tech tree itself, so this
+            # table is the only thing it waits on. Having it in place early is
+            # what catches the research the game does while a match loads -
+            # reading the ids from a live match lost that burst every time, and
+            # an applied benefit can't be taken back.
             if not self.suppression_live:
                 if not self.tech_effects.set_suppressible(TECH_EFFECT_IDS):
                     if not self.tech_error_reported:
@@ -729,10 +729,10 @@ class EmpireEarthContext(CommonContext):
             self._restore_granted(tree)
             nodes = self.research.scan(TECH_LOCATION_BY_NODE)
 
-            # How much of the opening burst we actually caught. The game may
-            # grant some of it before a tech tree is even resolvable, and a
-            # benefit already applied cannot be taken back - so this is
-            # reported rather than assumed.
+            # How much of the opening burst we actually caught. The game can
+            # grant some of it before a tech tree is even resolvable, and an
+            # applied benefit can't be taken back, so report it rather than
+            # assume it.
             researched = len(self.research.researched(TECH_LOCATION_BY_NODE))
             if researched and not self.opening_reported:
                 self.opening_reported = True
@@ -768,16 +768,16 @@ class EmpireEarthContext(CommonContext):
     def sync_buildings(self):
         """Hold locked buildings out of the build menu.
 
-        Run every poll, like the epoch gate: the game rebuilds its tech tree
+        Run every poll, like the epoch gate. The game rebuilds its tech tree
         for each match, and a node's availability is otherwise the engine's to
         set. Nothing here touches the epoch requirement, which the same
         predicate tests separately.
         """
         if not (self.gates_buildings and self.gate):
             return
-        # Wonders go through the same gate: the engine holds them behind the
+        # Wonders go through the same gate. The engine holds them behind the
         # same `available` flag on the same kind of node, so the only
-        # difference is which item frees which. They are not checks, so nothing
+        # difference is which item frees which. They aren't checks, so nothing
         # here reports one.
         gated = tuple(LOCKABLE_BUILDINGS) + tuple(self.gated_wonders)
         self.unlocked_buildings = {
@@ -799,9 +799,9 @@ class EmpireEarthContext(CommonContext):
     def enforce_match_settings(self):
         """Hold the skirmish setup screen at the settings the seed was rolled for.
 
-        Run on every poll rather than once, so changing a dropdown in game is
+        Run every poll rather than once, so changing a dropdown in game gets
         undone before it can reach a match. The values are live in memory, so a
-        correction takes effect immediately - there is nothing to reload.
+        correction takes effect immediately — there's nothing to reload.
         """
         if not self.match or not self.desired_settings:
             return
@@ -809,9 +809,9 @@ class EmpireEarthContext(CommonContext):
         if not changed:
             return
         if not self.settings_forced:
-            # First pass after attaching: the whole screen is being brought in
-            # line at once, which is expected rather than something the player
-            # did, so it is reported as a block and not flagged as a reversion.
+            # First pass after attaching, so the whole screen gets brought in
+            # line at once. That's expected rather than something you did, so
+            # report it as a block and don't flag it as a reversion.
             self.settings_forced = True
             logger.info("Skirmish settings set from your YAML:")
             for line in changed:
@@ -825,18 +825,18 @@ class EmpireEarthContext(CommonContext):
     def check_match_settings(self):
         """Warn if the skirmish does not match the seed, and cap the end epoch.
 
-        The player configures the skirmish before this client can intervene, so
-        a wrong starting epoch can only be reported - but the end epoch is a
-        value in the tech tree, so it is corrected outright.
+        You configure the skirmish before the client can intervene, so a wrong
+        starting epoch can only be reported. The end epoch is a value in the
+        tech tree, so that one gets corrected outright.
         """
         if not self.epochs:
             return
         reached = self.epochs.reached()
         highest = self.epochs.highest()
         if reached is None or highest is None:
-            # Not in a match (menu, loading). Re-arm only after a sustained
-            # absence: a single failed read would otherwise re-issue the
-            # warning every time it happened.
+            # Not in a match — menu, or loading. Re-arm only after a
+            # sustained absence, or one failed read re-issues the warning every
+            # time it happens.
             self.settings_misses += 1
             if self.settings_misses >= 6:      # ~3s at the current poll rate
                 self.settings_checked = False
@@ -851,9 +851,9 @@ class EmpireEarthContext(CommonContext):
         if reached != self.starting_epoch:
             if not self.saw_match_begin:
                 # Attached to a match that was already running, so the epoch
-                # read is wherever the player has got to - it says nothing
-                # about where the match started. Warning here claimed a skirmish
-                # had started in the wrong epoch every time the client was
+                # read is wherever you've got to and says nothing about where
+                # the match started. Warning here claimed a skirmish had
+                # started in the wrong epoch every time the client was
                 # restarted mid-game.
                 logger.info(
                     f"Attached to a match already in progress "
@@ -883,26 +883,26 @@ class EmpireEarthContext(CommonContext):
     def locations_for(self, db_name: str) -> list[str]:
         """Every check this type name satisfies.
 
-        Matching is on the type name the game itself reports, so a unit always
-        satisfies its own check. Some also satisfy others, because the game
-        makes a unit unbuildable in two ways that a per-unit check cannot
-        survive on its own:
+        Matching is on the type name the game reports, so a unit always
+        satisfies its own check. Some satisfy others too, because the game
+        makes a unit unbuildable in two ways a per-unit check can't survive
+        alone:
 
-        * The two heroes of a tier are mutually exclusive - build Sargon of
-          Akkad and Gilgamesh can never exist in that match - so recruiting
+        * The two heroes of a tier are mutually exclusive. Build Sargon of
+          Akkad and Gilgamesh can never exist in that match, so recruiting
           either sends both.
         * A unit is retired when a later tier replaces it, so a Slinger stops
           being offered once Simple Bowmen arrive. The replacement carries the
-          replaced unit's check: a Simple Bowman sends Slinger's too, and a
+          replaced unit's check — a Simple Bowman sends Slinger's too, and a
           Long Bow sends all four below it.
 
-        Both relations only ever *add* checks, which is what makes them safe:
-        an extra send costs a free check, while a missing one can leave a seed
+        Both relations only ever *add* checks, which is what makes them safe.
+        An extra send costs a free check; a missing one can leave a seed
         unwinnable.
         """
         loc = BUILD_LOCATION_BY_DBNAME.get(db_name)
         if loc is not None:
-            # Buildings cascade too: a `Planets` map has a Space Dock where
+            # Buildings cascade too. A `Planets` map has a Space Dock where
             # every other map has a Dock, so each sends the other's check.
             return [loc, *LOCATION_ALSO_SENDS.get(loc, ())]
         recruit = RECRUIT_LOCATION_BY_DBNAME.get(db_name)
@@ -930,9 +930,9 @@ class EmpireEarthContext(CommonContext):
             1 for n in finished if n in WONDER_BY_DBNAME
         )
 
-        # Everything is gated on completion. The roster lists an object from the
-        # moment its foundation is placed, so matching on what is merely owned
-        # sends "Build House" before the house exists - and would finish a
+        # Everything is gated on completion. The roster lists an object from
+        # the moment its foundation goes down, so matching on what's merely
+        # owned sends `Build House` before the house exists — and finishes a
         # wonder goal as the last wonder *starts*.
         new_ids = []
         for db_name in finished:
@@ -940,7 +940,7 @@ class EmpireEarthContext(CommonContext):
                 if loc in self.sent_objects:
                     continue
                 loc_id = LOCATION_NAME_TO_ID.get(loc)
-                # Locations outside this seed are simply not present.
+                # Locations outside this seed just aren't there.
                 if loc_id is None or loc_id not in self.missing_locations:
                     self.sent_objects.add(loc)
                     continue
@@ -949,8 +949,8 @@ class EmpireEarthContext(CommonContext):
 
         for loc, loc_id in new_ids:
             await self.check_locations([loc_id])
-            # No log line here: the server already prints a better one naming
-            # the item and who received it, and that is what reaches the game.
+            # No log line here. The server already prints a better one naming
+            # the item and who received it, and that's what reaches the game.
 
     async def sync_epochs(self):
         """Gate future epochs, and report any the player has just entered."""
@@ -965,9 +965,9 @@ class EmpireEarthContext(CommonContext):
         if reached == self.last_reached:
             return
         self.last_reached = reached
-        # Only epochs after the starting one and up to the goal exist as checks
-        # in this seed. Starting in Copper Age means there is no "Reach Stone
-        # Age" to send, and claiming it would be wrong as well as useless.
+        # Only epochs after the starting one and up to the goal are checks in
+        # this seed. Start in the Copper Age and there's no `Reach Stone Age`
+        # to send — claiming it would be wrong, not just useless.
         first = self.starting_epoch + 1
         for i in range(first, min(reached, self.goal_epoch) + 1):
             if i in self.sent_epochs:
@@ -978,22 +978,23 @@ class EmpireEarthContext(CommonContext):
                 continue
             self.sent_epochs.add(i)
             await self.check_locations([loc_id])
-            # Entering an epoch is worth noting; the check itself is announced
-            # by the server, so it is not repeated here.
+            # Entering an epoch is worth noting. The check itself gets
+            # announced by the server, so don't repeat it here.
             logger.info(f"Entered {EPOCH_NAMES[i]}.")
             self.notify(f"Entered {EPOCH_NAMES[i]}", "sent")
 
-    # Roughly three seconds at the current poll rate. Long enough that loading
-    # screens and a momentarily unresolvable roster do not read as an ending.
+    # Roughly three seconds at the current poll rate. Long enough that a
+    # loading screen or a briefly unresolvable roster doesn't read as an
+    # ending.
     MATCH_GONE_POLLS = 6
 
     def track_match_state(self):
         """Notice a match starting or ending, and say the seed is unaffected.
 
         Even with the game's own victory conditions held off, a run can still
-        stop: wiped down to nothing, quit to the menu, or a crash. None of that
-        costs checks - they are on the server - so the useful thing is to say so
-        rather than leave the player wondering.
+        stop — wiped down to nothing, quit to the menu, or a crash. None of
+        that costs you checks, since they live on the server, so say so rather
+        than leave you wondering.
         """
         self.check_defeat()
         alive = bool(self.roster and self.roster.owned_type_names())
@@ -1021,7 +1022,7 @@ class EmpireEarthContext(CommonContext):
         logger.info("Start another skirmish and the client picks up where it left off.")
         self.notify(f"Match ended - seed intact ({sent}/{total} checks)", "warn")
         # The next match starts at the seed's own starting epoch, so epoch
-        # detection has to be allowed to run again from scratch.
+        # detection has to run again from scratch.
         self.last_reached = -1
         # A new match builds a new tech tree at new addresses, so the cached
         # nodes belong to a game that no longer exists.
@@ -1032,9 +1033,9 @@ class EmpireEarthContext(CommonContext):
         if self.obsolescence:
             self.obsolescence.forget()
         self.permanence_reported = False
-        # The suppression stub needs no telling: it resolves the local player's
-        # tech tree on every call, and outside a match that resolves to null and
-        # everything passes through.
+        # The suppression stub needs no telling. It resolves the local
+        # player's tech tree on every call, and outside a match that resolves
+        # to null, so everything passes through.
         self.granted_techs.clear()
         self.granted_key = None
         self.tech_announced = False
@@ -1048,8 +1049,8 @@ class EmpireEarthContext(CommonContext):
     def enforce_peace(self):
         """Hold every computer player at peace with us.
 
-        Run every poll rather than once: an AI that re-declares war is put back
-        within half a second, and a new match is covered without any special
+        Run every poll rather than once. An AI that re-declares war gets put
+        back within half a second, and a new match is covered with no special
         handling.
         """
         if self.opponents != "allied" or not self.diplomacy:
@@ -1068,10 +1069,10 @@ class EmpireEarthContext(CommonContext):
     def check_defeat(self):
         """Report a defeat that the match itself never acts on.
 
-        Holding victory off stops the match ending, not the defeat: a defeated
-        player is left unable to do anything in a match that keeps running, with
-        their units still in the roster. Nothing else here would notice, so the
-        outcome field is read directly.
+        Holding victory off stops the match ending, not the defeat. You end up
+        unable to do anything in a match that keeps running, with your units
+        still in the roster. Nothing else here would notice, so the outcome
+        field is read directly.
         """
         if self.defeat_reported or not self.proc or not self.diplomacy:
             return
@@ -1134,8 +1135,8 @@ async def game_watcher(ctx: EmpireEarthContext):
             if ctx.ensure_attached():
                 warned = False
                 if ctx.server and ctx.slot is not None:
-                    # First, so a setup screen is corrected even if something
-                    # further down fails this poll.
+                    # First, so a setup screen still gets corrected when
+                    # something further down fails this poll.
                     ctx.enforce_match_settings()
                     await ctx.apply_pending_items()
                     await ctx.sync_epochs()
@@ -1143,21 +1144,21 @@ async def game_watcher(ctx: EmpireEarthContext):
                     ctx.sync_buildings()
                     await ctx.sync_research()
                     ctx.sync_tech_effects()
-                    # Driven from here rather than from sync_epochs: that
-                    # returns early once the epoch stops changing, which would
-                    # otherwise stop these running at all.
+                    # Driven from here rather than from sync_epochs, which
+                    # returns early once the epoch stops changing and would
+                    # stop these running at all.
                     ctx.check_match_settings()
                     await ctx.sync_roster()
                     ctx.track_match_state()
                     ctx.enforce_peace()
-                    # After sync_roster, so the wonder count it produces is
-                    # this poll's rather than the previous one's.
+                    # After sync_roster, so the wonder count is this poll's
+                    # rather than the previous one's.
                     await ctx.check_goal()
             elif not warned:
-                # "Not running" and "running but we cannot open it" look the
-                # same from here, and the second is far more confusing to hit:
-                # an elevated game refuses a non-elevated client every right,
-                # including the most basic query.
+                # "Not running" and "running but we can't open it" look the
+                # same from here, and the second is far worse to hit blind — an
+                # elevated game refuses a non-elevated client every right, down
+                # to the most basic query.
                 from .Memory import find_pids
 
                 if find_pids(*EXE_NAMES):
@@ -1182,9 +1183,8 @@ async def game_watcher(ctx: EmpireEarthContext):
 def launch(*args):
     async def main():
         parser = get_base_parser(description="Empire Earth Archipelago Client")
-        # Depending on the Archipelago version these may or may not already be
-        # provided by get_base_parser(); adding them twice is not an error we
-        # want to be fatal.
+        # get_base_parser() provides these on some Archipelago versions and
+        # not others, and adding one twice raises. Not worth dying over.
         for flag, kwargs in (
             ("--name", {"default": None, "help": "Slot name to connect as."}),
             ("--nogui", {"action": "store_true", "help": "Run without the GUI."}),
@@ -1202,8 +1202,9 @@ def launch(*args):
         ctx.server_task = asyncio.create_task(server_loop(ctx), name="ServerLoop")
         if gui_enabled and not getattr(ns, "nogui", False):
             ctx.run_gui()
-        # Launched from the Launcher GUI (or any non-interactive parent) there is
-        # no usable stdin; the console reader must not take the client down.
+        # Launched from the Launcher GUI, or any non-interactive parent,
+        # there's no usable stdin. The console reader must not take the client
+        # down.
         try:
             ctx.run_cli()
         except Exception as e:

@@ -97,8 +97,8 @@ class Obsolescence:
 
         Technologies are deliberately left exactly as the game keeps them, and
         clearing their expiry breaks them. Several form chains that share one
-        button and are separated only by epoch - the seven wall and tower
-        upgrades all carry `but_upgrade wall and tower` - and the engine
+        button and are separated only by epoch — the seven wall and tower
+        upgrades all carry `but_upgrade wall and tower` — and the engine
         retires the current tier so the next can take the slot. Held open
         forever, the slot never advances: reported from a two-player run as the
         tower upgrade button never appearing, with `Epoch: Industrial Age`

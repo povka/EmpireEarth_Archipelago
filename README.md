@@ -101,10 +101,6 @@ Wonders count only once construction finishes. The match's end epoch is capped a
 
 **"No memory profile matches this build."** — the executable isn't a supported GOG or Steam Art of Conquest build.
 
-**Items aren't doing anything.** — they apply once a skirmish is live. Anything received at the menu waits for the next match.
-
-**The game minimises.** — it does that on focus loss. It also renders at the primary monitor's resolution, so dragging it to a bigger second monitor scales the image rather than sharpening it.
-
 ---
 
 ## Building the apworld
@@ -119,6 +115,21 @@ Use `py` on Windows if `python` isn't on your `PATH`. The build validates, then 
 
 `--check` validates without building. Six checks run before anything is packaged: every file compiles, every relative import names something real, the data modules import for real, no two ids collide, nothing needs a Python newer than 3.11, and no name is read that nothing binds.
 
+### Renaming things
+
+Checks are named after the game's database, which is not always what the game
+calls something on screen. Two tables fix that, and neither can break a check —
+detection matches on the database name and ids are assigned in database order,
+so nothing looks at the display name.
+
+- **`UNIT_DISPLAY_OVERRIDES`** in `Locations.py` — renames a unit. `Domestic
+  Wolf` reads `Canine Scout` because that's what the game calls it.
+- **`DISPLAY_OVERRIDES`** in `tools/gen_objects.py` — renames a building or
+  wonder, and needs a regenerate to take effect. `Lighthouse at Alexandria` is
+  the Pharos Lighthouse.
+
+Add a line to either if a name annoys you.
+
 For the memory layouts, offsets and the approaches that didn't work, see [`notes/REVERSE.md`](notes/REVERSE.md).
 
 ---
@@ -128,7 +139,7 @@ For the memory layouts, offsets and the approaches that didn't work, see [`notes
 - **Run on the base game or NeoEE.** GOG and Steam Art of Conquest only. Buy the game.
 - **Work in multiplayer against people.** It writes to the game process.
 - **Verify your map choice.** `map_terrain` is you telling the seed what you'll play, and nothing checks you meant it.
-- **Guarantee every unit epoch.** Building epochs come from the running game's tech tree. Some unit epochs still come from `dbobjects.dat`, which reads high about as often as it reads right lol
+- **Guarantee every unit epoch.** Building epochs come from the running game's tech tree. Some unit epochs still come from `dbobjects.dat`, which is all over the place, pretty much none of it matches what it should and i still don't fully understand how it resolves the data in-game but i coded around everything i could find WeirdChamp
 - **Colour its in-game messages.** Still on the list.
 
 ---

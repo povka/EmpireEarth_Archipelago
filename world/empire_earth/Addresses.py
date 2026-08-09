@@ -24,12 +24,12 @@ EXE_NAMES = ("EE-AOC.exe", "Empire Earth.exe")
 RESOURCE_NAMES = ("Food", "Wood", "Stone", "Gold", "Iron")
 
 # How a player's match ended, on the player object. Found by resigning and
-# watching: the resigning player went 0 -> 2 exactly as the game announced the
+# watching — the resigning player went 0 -> 2 exactly as the game announced the
 # other one victorious, and that opponent read 1.
 #
-# This matters because holding victory off stops the match *tearing down*, not
-# the defeat itself: a defeated player is left unable to act in a match that
-# never ends, and their units stay in the roster, so nothing else the client
+# It matters because holding victory off stops the match *tearing down*, not
+# the defeat itself. A defeated player is left unable to act in a match that
+# never ends, with their units still in the roster, so nothing else the client
 # watches would notice.
 OUTCOME_OFFSET = 0x0A28
 OUTCOME_UNDECIDED = 0
@@ -75,11 +75,11 @@ class Profile:
             return False
 
 
-# The Steam release (26 May 2026) ships the *same* binary as GOG: all seven PE
-# sections are byte-identical, and it has the same image base, section layout
-# and (lack of) ASLR. Only the file is larger, by 15,720 bytes of appended data
-# outside the sections - a signature or store wrapper. So every address here is
-# valid for both, and the two profiles differ only in the size they match on.
+# The Steam release (26 May 2026) ships the *same* binary as GOG. All seven PE
+# sections are byte-identical, same image base, same section layout, same lack
+# of ASLR. Only the file is bigger, by 15,720 bytes of appended data outside
+# the sections — a signature or store wrapper. So every address here is valid
+# for both, and the two profiles differ only in the size they match on.
 _AOC_ADDRESSES = dict(
     exe="EE-AOC.exe",
     player_table=0x00930DB4,
@@ -106,9 +106,9 @@ def profile_for(exe_path: str) -> Profile | None:
     for p in PROFILES:
         if p.matches(exe_path):
             return p
-    # Same executable name but an unexpected size. Returned anyway so the
-    # caller can warn rather than silently doing nothing, but a different build
-    # will have different addresses and the layout checks should catch it.
+    # Same executable name, unexpected size. Returned anyway so the caller can
+    # warn rather than silently do nothing, but a different build has different
+    # addresses and the layout checks should catch it.
     base = os.path.basename(exe_path).lower()
     for p in PROFILES:
         if p.exe.lower() == base:
@@ -130,8 +130,8 @@ class ResourceAccess:
     def local_index(self) -> int:
         """The slot the local human occupies, read live from the game.
 
-        Falls back to the profile's default if the global is unavailable or
-        implausible, so a bad read can never silently target another player.
+        Falls back to the profile's default when the global is unavailable or
+        implausible, so a bad read can't silently target another player.
         """
         p = self.profile
         if p.local_index_global:
@@ -164,8 +164,8 @@ class ResourceAccess:
         out = []
         for i in range(len(RESOURCE_NAMES)):
             v = self.proc.read_value(addr + i * p.stride, p.kind)
-            # A live stockpile is never negative and never absurdly large;
-            # anything else means the pointer is stale.
+            # A live stockpile is never negative and never absurdly large.
+            # Anything else means the pointer is stale.
             if v is None or v < 0 or v > SANE_MAX:
                 return None
             out.append(v)

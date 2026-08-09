@@ -1,15 +1,15 @@
 """Find an Empire Earth installation, whichever store it came from.
 
-The GOG and Steam releases ship the *same* game: `Language.dll`,
+The GOG and Steam releases ship the *same* game. `Language.dll`,
 `Low-Level Engine.dll`, `Default.dll` and both `data.ssa` archives are
 byte-identical, and every PE section of `EE-AOC.exe` matches too. The Steam
-executable is only 15,720 bytes larger, all of it appended outside the sections
-- a signature or store wrapper. So every address, string id and generated table
-in this project is valid for both, and the tools should not care which one they
-are pointed at.
+executable is only 15,720 bytes larger, all of it appended outside the
+sections — a signature or store wrapper. So every address, string id and
+generated table in this project is valid for both, and the tools don't care
+which one you point them at.
 
-Override with the EE_ROOT environment variable if your install is somewhere
-this does not guess:
+Override with the `EE_ROOT` environment variable when your install is somewhere
+this doesn't guess:
 
     set EE_ROOT=D:\\Games\\Empire Earth Gold
 """
@@ -33,8 +33,8 @@ CANDIDATE_ROOTS = [
 AOC = "Empire Earth - The Art of Conquest"
 BASE = "Empire Earth"
 
-# The two editions ship a `data.ssa` each, in their own folder. They are not
-# versions of one file - each is the database for its own executable - so which
+# The two editions ship a `data.ssa` each, in their own folder. They aren't
+# versions of one file — each is the database for its own executable — so which
 # one a tool reads has to be a decision, not a default nobody looked at.
 EDITIONS = {
     "aoc": AOC,
@@ -42,18 +42,18 @@ EDITIONS = {
 }
 
 # Art of Conquest. The client attaches to `EE-AOC.exe`, the world offers the
-# Space Age as a goal, and the Space Age is an Art of Conquest epoch - so this
-# is the edition the project describes.
+# Space Age as a goal, and the Space Age is an Art of Conquest epoch, so this is
+# the edition the project describes.
 #
 # Reading the base game's by default was a real bug. Its archive is four times
 # the size (163 MB against 45 MB) because it carries the shared assets, which
 # made it look like the complete one, but its object database is the smaller of
-# the two: 724 records against 848. Everything the expansion adds was therefore
-# missing from the generated tables - `Inf15 - Watchman`, `Inf15 - Cyber Ninja`,
-# five kinds of spaceship, the Space Dock, the Teleporter, and the Orbital
-# Space Station wonder - so a Space Age seed contained no Space Age content.
+# the two — 724 records against 848. Everything the expansion adds went missing
+# from the generated tables: `Inf15 - Watchman`, `Inf15 - Cyber Ninja`, five
+# kinds of spaceship, the Space Dock, the Teleporter, and the Orbital Space
+# Station wonder. A Space Age seed contained no Space Age content.
 #
-# `base` stays here rather than being deleted: supporting the original game is
+# `base` stays here rather than being deleted — supporting the original game is
 # on the roadmap, and it needs its own tables generated from its own database.
 DEFAULT_EDITION = "aoc"
 
@@ -63,7 +63,7 @@ def _looks_like_install(root: str) -> bool:
 
 
 def find_root(explicit: str = "") -> str:
-    """The install root. Raises with a useful message if there is none."""
+    """The install root. Raises with a useful message when there's none."""
     if explicit:
         if _looks_like_install(explicit):
             return explicit
@@ -97,8 +97,8 @@ def engine_dll(root: str = "") -> str:
 def data_ssa(root: str = "", edition: str = DEFAULT_EDITION) -> str:
     """The archive holding an edition's object database and assets.
 
-    Defaults to Art of Conquest; pass `edition="base"` for the original game.
-    See EDITIONS above for why this is a choice rather than a default.
+    Defaults to Art of Conquest. Pass `edition="base"` for the original game.
+    See `EDITIONS` above for why this is a choice rather than a default.
     """
     folder = EDITIONS.get(edition)
     if folder is None:

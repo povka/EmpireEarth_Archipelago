@@ -31,7 +31,7 @@ ENGINE_DLL = "Low-Level Engine.dll"
 # lists a building the moment its foundation is placed, so this is the only
 # thing separating "started" from "finished". Verified live: a Settlement read
 # 0 here for the ten seconds it took to build, then 1; every finished object -
-# buildings, citizens, path points alike - reads 1.
+# buildings, citizens, path points alike — reads 1.
 CONSTRUCTED_OFFSET = 0x34C
 
 

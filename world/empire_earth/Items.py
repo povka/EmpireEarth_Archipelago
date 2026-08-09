@@ -18,17 +18,14 @@ class ResourceId(IntEnum):
 
 # item name -> (offset from BASE_ID, classification, resource granted or None)
 #
-# Resource bundles are `filler`, not progression: no rule anywhere asks for one,
-# and nothing in the game becomes reachable because you have more wood. Only the
-# epoch unlocks below gate anything.
+# Bundles are `filler`, not progression. No rule asks for one and nothing
+# becomes reachable because you have more wood.
 #
-# The distinction is not cosmetic. Progression balancing only moves progression
-# items, so classifying ~40 bundles as progression spent its whole budget on
-# items that change nothing, while the 14 unlocks that actually gate a run - in
-# a world where epoch N needs every epoch before it - competed with them for
+# That's not cosmetic. Progression balancing only moves progression items, so
+# calling ~40 bundles progression spent the entire budget on items that change
+# nothing, while the 14 unlocks that actually gate a run competed with them for
 # attention. It also made the fill treat every bundle as a constrained
-# placement, and told other players' worlds that our filler was worth
-# prioritising.
+# placement, and told other worlds our filler was worth prioritising.
 ITEM_TABLE: dict[str, tuple[int, ItemClassification, ResourceId | None]] = {
     "Food Bundle": (0, ItemClassification.filler, ResourceId.FOOD),
     "Wood Bundle": (1, ItemClassification.filler, ResourceId.WOOD),
@@ -45,8 +42,8 @@ try:
 except ImportError:  # loaded as a top-level module by tools/
     from Epochs import EPOCH_NAMES
 
-# One unlock per epoch you can advance INTO, i.e. everything after the first.
-# Receiving "Epoch: Stone Age" is what lets you press Advance in the Capitol.
+# One unlock per epoch you can advance INTO, so everything after the first.
+# Receiving `Epoch: Stone Age` is what lets you press Advance in the Capitol.
 EPOCH_ITEM_BASE = 100
 EPOCH_ITEMS: dict[str, int] = {
     f"Epoch: {name}": i for i, name in enumerate(EPOCH_NAMES) if i >= 1
@@ -67,41 +64,40 @@ except ImportError:  # loaded as a top-level module by tools/
     from Objects import BUILDINGS, WONDERS
     from BuildingEpochs import BUILDING_EPOCH
 
-# Buildings that cannot be gated, and why:
+# Buildings that can't be gated, and why:
 #
-# Capitol     - every match starts with one, so the unlock would do nothing,
-#   and locking it would leave a run with no way to make citizens.
-# Farm        - it has no tech tree node the client can reach. The only node
-#   whose icon mentions a farm is `but_farm_15t`, an epoch 14 variant; there is
-#   no node for the ordinary Farm at any epoch below that, so there is nothing
-#   to clear. Shipping the item anyway would promise a lock that never happens.
-# Town Center - it is not built at all. You garrison five citizens in a
-#   Settlement and it becomes one, so there is no build button to hold shut.
-#   What actually gates it is the Settlement, via BUILDING_PREREQS below.
+# - **Capitol** — every match starts with one, so the unlock would do nothing,
+#   and locking it leaves a run with no way to make citizens.
+# - **Farm** — no tech tree node the client can reach. The only node whose icon
+#   mentions a farm is `but_farm_15t`, an epoch 14 variant, so there's nothing
+#   to clear. Shipping the item would promise a lock that never happens.
+# - **Town Center** — not built at all. You garrison five citizens in a
+#   Settlement and it becomes one, so there's no button to hold shut. The
+#   Settlement is what gates it, via BUILDING_PREREQS below.
 ALWAYS_BUILDABLE = ("Capitol", "Farm", "Town Center")
 
-# Buildings you reach through another building rather than from a build menu.
-# The requirement is real even though no unlock of their own exists.
+# Buildings reached through another building rather than a build menu. The
+# requirement is real even with no unlock of their own.
 BUILDING_PREREQS: dict[str, str] = {
     "Town Center": "Settlement",
 }
 
-# Ids are assigned over every building, gated or not, so that excluding one
-# never shifts another's id and invalidates existing seeds.
+# Ids run over every building, gated or not, so excluding one never shifts
+# another's id and invalidates existing seeds.
 _ALL_BUILDINGS: tuple[str, ...] = tuple(
     display for _raw, display in sorted(BUILDINGS.items())
 )
-# Gated buildings. Restricted to those with an epoch measured from the running
-# game's tech tree, because an unlock for anything else is an item that gates
-# nothing: the client finds a building's node by icon and its epoch is what
-# says where the check sits, and neither exists for a building the tech tree
-# sweep has never seen. Art of Conquest adds ten such - Space Dock, Teleporter,
-# and the rest - and without this they arrived as progression items that did
-# nothing while taking places in the pool from items that do.
-# Buildings a map substitutes for another are not gated. Whether a match has a
-# Dock or a Space Dock is decided by the map, which the seed never chose, so an
-# unlock naming one of them would gate a building half of all matches do not
-# have. The pair still sends both checks; see Locations.BUILDING_PAIRS.
+# Gated buildings, restricted to those with an epoch measured from the running
+# tech tree. An unlock for anything else gates nothing: the client finds a
+# node by icon and the epoch says where the check sits, and neither exists for
+# a building the sweep has never seen. Art of Conquest adds ten such, and
+# without this they arrived as progression items that did nothing while taking
+# places in the pool from items that do.
+#
+# Map substitutes aren't gated either. Whether a match has a Dock or a Space
+# Dock is the map's decision, which the seed never made, so an unlock naming
+# one would gate a building half of all matches don't have. The pair still
+# sends both checks; see Locations.BUILDING_PAIRS.
 MAP_SUBSTITUTE_BUILDINGS = frozenset({"Space Dock", "Space Turret"})
 
 LOCKABLE_BUILDINGS: tuple[str, ...] = tuple(
@@ -114,11 +110,10 @@ LOCKABLE_BUILDINGS: tuple[str, ...] = tuple(
 # Only in the pool when the building_unlocks option is on.
 UNLOCK_ITEM_BASE = 200
 
-# The name these items carry. A constant because four places across three
-# modules build it, plus the generation test harness, and a prefix that drifts
-# in one of them produces an item nothing recognises - `create_item` would
-# raise on a name absent from ITEM_TABLE, but a rule referring to the old name
-# would just silently never be satisfiable.
+# A constant because four places across three modules build this name, plus
+# the test harness. A prefix that drifts in one of them produces an item
+# nothing recognises — `create_item` raises on a name absent from ITEM_TABLE,
+# but a rule referring to the old name is silently never satisfiable.
 BUILDING_ITEM_PREFIX = "Building: "
 
 
@@ -140,13 +135,13 @@ ITEM_ID_TO_BUILDING = {
     if display in LOCKABLE_BUILDINGS
 }
 
-# Wonders are gated the same way, and by the same option, but they are not
-# checks: building one sends nothing. A wonder is worth finding for its own
-# sake - and under a wonder goal it is the goal - so the item is the reward and
-# the construction is the use of it, rather than both at once.
+# Wonders are gated the same way and by the same option, but they aren't
+# checks — building one sends nothing. That's deliberate: under a wonder goal
+# the wonder is the goal, so the item is the reward and raising it is the use
+# of it, rather than both at once.
 #
-# Their own id block, so that adding a wonder never renumbers a building. Ids
-# run over every wonder, gated or not, for the same reason.
+# Their own id block, so adding a wonder never renumbers a building. Ids run
+# over every wonder, gated or not, for the same reason.
 WONDER_UNLOCK_ITEM_BASE = 300
 
 WONDER_ITEM_PREFIX = "Wonder: "
@@ -167,8 +162,7 @@ for _n, _display in enumerate(_ALL_WONDERS):
     )
 
 # AP item id -> wonder the client should make buildable. Kept apart from the
-# building map because the client gates them through the same mechanism but
-# counts them for a different purpose.
+# building map: same gating mechanism, different purpose in the client.
 ITEM_ID_TO_WONDER = {
     BASE_ID + WONDER_UNLOCK_ITEM_BASE + n: display
     for n, display in enumerate(_ALL_WONDERS)
@@ -179,13 +173,13 @@ try:
 except ImportError:  # loaded as a top-level module by tools/
     from Technologies import TECHNOLOGIES
 
-# One item per technology, carrying the benefit researching it would have given.
-# Researching sends the check and is deliberately left with no effect, so this
-# is where the benefit actually comes from.
+# One item per technology, carrying the benefit researching it would have
+# given. Researching sends the check and is deliberately left with no effect,
+# so this is where the benefit comes from.
 #
-# `useful`, not `progression`: no rule anywhere asks for one. A technology makes
-# your citizens quicker or your priests tougher; none of them is the difference
-# between a check being reachable and not.
+# `useful`, not `progression` — no rule asks for one. A technology makes your
+# citizens quicker or your priests tougher; none is the difference between a
+# check being reachable and not.
 TECH_ITEM_BASE = 400
 _TECHS_ORDERED = tuple(sorted(TECHNOLOGIES))
 

@@ -1,9 +1,9 @@
 """Generation matrix test that runs against a frozen Archipelago install.
 
 A frozen Archipelago ships no test framework, so the WorldTestBase tests in
-world/empire_earth/test only run in a source checkout. This exercises the same
-ground by driving ArchipelagoGenerate.exe over every option combination and
-checking the resulting spoiler.
+`world/empire_earth/test` only run in a source checkout. This covers the same
+ground by driving `ArchipelagoGenerate.exe` over every option combination and
+reading the spoiler it produces.
 
     py tools\\test_generation.py
     py tools\\test_generation.py --quick
@@ -82,31 +82,30 @@ Empire Earth:
   goal: {goal}
   goal_epoch: {goal_epoch}
   wonders_for_victory: {wonders}
-  # Wonders are gated by this option and are not checks, so counting them
-  # means counting the `Wonder:` items it puts in the pool.
+  # Wonders are gated by this option and aren't checks, so counting them means
+  # counting the `Wonder:` items it puts in the pool.
   building_unlocks: true
 """
 
 # (goal, goal_epoch, wonders, expected `Wonder:` items, must generate)
 GOAL_CASES = [
-    # Wonder unlocks do not depend on the goal. A wonder is buildable in any
-    # seed and gating one is worth doing whether or not the run ends by
-    # raising them, so an epoch-goal seed still offers all eight - it just
-    # never has to use them. Only `building_unlocks` decides whether they
-    # exist at all.
+    # Wonder unlocks don't depend on the goal. A wonder is buildable in any
+    # seed and gating one is worth doing whether or not the run ends by raising
+    # them, so an epoch-goal seed still offers all eight — it just never has to
+    # use them. Only `building_unlocks` decides whether they exist at all.
     ("reach_epoch", "space_age", 0, 8, True),
-    # Eight, not nine: these fixtures leave `map_terrain` at its default, and a
-    # land-and-water map has the Pharos Lighthouse rather than the Orbital
+    # Eight, not nine — these fixtures leave `map_terrain` at its default, and
+    # a land-and-water map has the Pharos Lighthouse rather than the Orbital
     # Space Station that stands in its place on a space map.
     ("wonder_victory", "space_age", 3, 8, True),
     ("wonder_victory", "bronze_age", 6, 6, True),
     ("either", "dark_age", 1, 6, True),
-    # wonders_for_victory and goal must agree, or the match could end in a
-    # victory the seed does not recognise.
+    # wonders_for_victory and goal have to agree, or the match can end in a
+    # victory the seed doesn't recognise.
     ("reach_epoch", "space_age", 2, 0, False),
     ("wonder_victory", "space_age", 0, 0, False),
-    # Wonders cannot be built before the Bronze Age, so a wonder goal in a seed
-    # that stops earlier is unwinnable and must be refused.
+    # You can't build a wonder before the Bronze Age, so a wonder goal in a
+    # seed that stops earlier is unwinnable and gets refused.
     ("wonder_victory", "copper_age", 1, 0, False),
     ("wonder_victory", "bronze_age", 1, 6, True),
 ]
@@ -125,9 +124,9 @@ SETTINGS_EXPECTED = [
 def world_modules():
     """Import the world's data modules outside Archipelago.
 
-    They are written to load either as a package or standalone, but they still
-    import names from BaseClasses, so it is stubbed with just enough to satisfy
-    the class definitions - none of the data tables touch it.
+    They're written to load either as a package or standalone, but they still
+    import names from BaseClasses, so it gets stubbed with just enough to
+    satisfy the class definitions — none of the data tables touch it.
     """
     import types as _types
 
@@ -152,7 +151,7 @@ def sync_world() -> str:
     `ArchipelagoGenerate.exe` loads the apworld from `custom_worlds`, never
     this checkout, so without this every seed here is built by whatever was
     installed last while the assertions read the current tables. The two
-    disagreeing looks exactly like a logic bug: after the recruit floors were
+    disagreeing looks exactly like a logic bug — after the recruit floors were
     corrected, a stale install put `Recruit Sagitarian Cruiser` in a Dark Age
     seed and three tests failed for a bug that had already been fixed.
     """
@@ -175,7 +174,11 @@ def spoiler_for(yaml_text: str) -> tuple[str | None, str]:
         out = os.path.join(work, "out")
         os.makedirs(players)
         os.makedirs(out)
-        with open(os.path.join(players, "p.yaml"), "w") as f:
+        # UTF-8 explicitly. Archipelago reads player files as UTF-8, and on
+        # Windows the default here is cp1252, so anything outside ASCII — an em
+        # dash in a comment is enough — reached the generator as a byte it
+        # refuses to decode.
+        with open(os.path.join(players, "p.yaml"), "w", encoding="utf-8") as f:
             f.write(yaml_text)
 
         proc = subprocess.run(
@@ -205,11 +208,11 @@ def run_one(goal: str, epochs: int, bundle: int) -> tuple[bool, str]:
     if text is None:
         return False, why
 
-    # Every epoch up to the goal must exist as an item and a check,
-    # and nothing beyond it may appear.
+    # Every epoch up to the goal has to exist as an item and a check, and
+    # nothing beyond it may appear.
     reach = set(re.findall(r"^Reach (.+?):", text, re.M))
-    # Require the ": Epoch: " placement so the spoiler's own
-    # "Goal Epoch: <name>" header is not counted as an item.
+    # Require the ": Epoch: " placement, or the spoiler's own
+    # "Goal Epoch: <name>" header gets counted as an item.
     items = set(re.findall(r": Epoch: (.+?)$", text, re.M))
     if len(reach) != epochs:
         return False, f"expected {epochs} Reach checks, found {len(reach)}"
@@ -224,10 +227,10 @@ def wonder_names() -> list[str]:
     """Every wonder the world knows about, read rather than listed.
 
     This was a hardcoded list of the base game's seven. When the object tables
-    were regenerated from the Art of Conquest database it silently kept
-    counting seven, so the two wonders the expansion adds were invisible to
-    every assertion here - a test that cannot see new content is worse than no
-    test, because it reports success.
+    were regenerated from the Art of Conquest database it silently kept counting
+    seven, so the two wonders the expansion adds were invisible to every
+    assertion here — a test that can't see new content is worse than no test,
+    because it reports success.
     """
     world_modules()
     from Objects import WONDERS
@@ -241,18 +244,18 @@ def run_goal(goal, goal_epoch, wonders, expect_checks, should_generate):
         label=label, goal=goal, goal_epoch=goal_epoch, wonders=wonders))
 
     if not should_generate:
-        # The pairing rule has to be enforced, not merely documented.
+        # The pairing rule has to be enforced, not just documented.
         if text is None:
             return True, "refused, as it should be"
         return False, "generated a seed that should have been refused"
 
     if text is None:
         return False, why
-    # A wonder is not a check any more - building one sends nothing - so what
-    # a seed offers is the unlock item, and that is what gets counted.
+    # A wonder isn't a check any more — building one sends nothing — so what a
+    # seed offers is the unlock item, and that's what gets counted.
     offered = {w for w in wonder_names()
                # Trailing \s* because the spoiler is written with CRLF line
-               # endings, so `$` does not sit where it looks like it does.
+               # endings, so `$` doesn't sit where it looks like it does.
                if re.search(rf": Wonder: {re.escape(w)}\s*$", text, re.M)}
     if len(offered) != expect_checks:
         return False, (f"expected {expect_checks} wonder items, "
@@ -260,7 +263,7 @@ def run_goal(goal, goal_epoch, wonders, expect_checks, should_generate):
     if re.search(r"^Build (?:Coliseum|Time Machine|Tower of Babylon):",
                  text, re.M):
         return False, "a wonder was placed as a check"
-    # Time Machine needs the Space Age, so its unlock may only appear there.
+    # Time Machine needs the Space Age, so its unlock only belongs there.
     if "Time Machine" in offered and goal_epoch != "space_age":
         return False, "Time Machine unlock in a seed that cannot reach it"
     return True, f"{len(offered)} wonder items"
@@ -282,8 +285,8 @@ Empire Earth:
 def run_logic(start: str, goal: str, start_i: int, goal_i: int):
     """No check may hold an epoch item that check itself needs to reach.
 
-    This is a real bug that shipped: `Epoch: Bronze Age` was placed on
-    `Build Siege Factory`, which cannot be built before the Dark Age. Build and
+    A real bug that shipped. `Epoch: Bronze Age` was placed on
+    `Build Siege Factory`, which can't be built before the Dark Age. Build and
     recruit checks had no epoch requirements at all.
     """
     world_modules()
@@ -334,8 +337,8 @@ def run_unlocks(start: str, goal: str, goal_i: int):
     """No building unlock may sit behind a check that needs that building.
 
     `Building: Stable` on `Build Stable` is the obvious form. The subtle one is
-    `Building: Stable` on `Recruit Lancer`, because cavalry is produced at a
-    stable - which is why the producer table exists at all.
+    `Building: Stable` on `Recruit Lancer`, because cavalry comes from a
+    stable — which is why the producer table exists at all.
     """
     world_modules()
     from Locations import LOCATION_MIN_EPOCH, RECRUIT_LOCATION_PRODUCERS
@@ -349,9 +352,10 @@ def run_unlocks(start: str, goal: str, goal_i: int):
     # count the buildings rather than the lines.
     placed, circular = set(), []
     for line in text.splitlines():
-        # Built from the constant rather than spelled out, so renaming the item
-        # cannot leave this matching a prefix nothing produces any more - which
-        # would make every run pass with "no Unlock items reached the spoiler".
+        # Built from the constant rather than spelled out, so renaming the
+        # item can't leave this matching a prefix nothing produces any more —
+        # which makes every run pass with "no Unlock items reached the
+        # spoiler".
         m = re.match(rf"^(.+?): ({re.escape(BUILDING_ITEM_PREFIX)}.+?)\s*$",
                      line.strip())
         if not m:
@@ -361,15 +365,15 @@ def run_unlocks(start: str, goal: str, goal_i: int):
         if loc == f"Build {building}":
             circular.append(f"{building} on its own build check")
         elif loc.startswith("Recruit "):
-            # Keyed by the location, not by `loc` minus its prefix. That left a
-            # unit *display* name being looked up in a table keyed by *family*,
-            # so it matched nothing, `producers` was always empty, and the
-            # circularity test below could never fire - the subtle case this
-            # function exists to catch was silently passing.
+            # Keyed by the location, not by `loc` minus its prefix. That left
+            # a unit *display* name being looked up in a table keyed by
+            # *family*, so it matched nothing, `producers` was always empty,
+            # and the circularity test below could never fire — the subtle case
+            # this function exists to catch was silently passing.
             producers = RECRUIT_LOCATION_PRODUCERS.get(loc, ())
             # Only circular when this building is the sole way to get the
-            # family. Another producer leaves the check reachable, and one that
-            # is never locked at all - a Capitol makes citizens - leaves it
+            # family. Another producer leaves the check reachable, and one
+            # that's never locked at all — a Capitol makes citizens — leaves it
             # free regardless.
             if any(p not in LOCKABLE_BUILDINGS for p in producers):
                 continue
@@ -395,14 +399,14 @@ def run_simulation(start: str, goal: str, start_i: int, goal_i: int,
     """Play the seed with a model of the game and check it can be finished.
 
     Generation only proves a seed consistent with the world's own rules, so a
-    rule that is wrong about the game produces a seed that is provably
-    completable and actually is not. This models the game instead: an epoch is
+    rule that's wrong about the game produces a seed that is provably
+    completable and actually isn't. This models the game instead — an epoch is
     reached by holding every unlock up to it, a building needs its unlock AND
     its epoch, and a unit needs a producer you can build right now.
 
     It caught a real deadlock. `Recruit Siege` accepts a Barracks or a Siege
-    Factory, so a run holding `Building: Siege Factory` from the start looked able
-    to recruit siege units in the Copper Age - but a siege factory cannot be
+    Factory, so a run holding `Building: Siege Factory` from the start looked
+    able to recruit siege units in the Copper Age. A siege factory can't be
     built until the Dark Age, and the epoch unlocks to get there were behind
     that very check.
     """
@@ -426,7 +430,7 @@ def run_simulation(start: str, goal: str, start_i: int, goal_i: int,
 
     def buildable(building, epoch, inv):
         # A match starts with a Capitol already standing, whatever epoch it
-        # begins in, so it is available before its own epoch requirement.
+        # begins in, so it's available before its own epoch requirement.
         if building == "Capitol":
             return True
         if building_epoch(building) > epoch:
@@ -449,7 +453,7 @@ def run_simulation(start: str, goal: str, start_i: int, goal_i: int,
                 return True                     # a wonder; its floor applied
             return buildable(name, epoch, inv)
         if loc.startswith("Recruit "):
-            # Per unit, matching what the world's own rules use; the floor is
+            # Per unit, matching what the world's own rules use. The floor is
             # applied above.
             from Locations import RECRUIT_LOCATION_PRODUCERS
             producers = RECRUIT_LOCATION_PRODUCERS.get(loc, ())
@@ -516,10 +520,10 @@ TERRAIN_CASES = {
 def run_terrain(terrain: str) -> tuple[bool, str]:
     """A seed must only offer what the declared map can actually build.
 
-    The client forces map size but never map choice, so `map_terrain` is the
-    player telling the seed which map they will play. Get this wrong and a run
-    is full of checks nobody can send - a land-only map has no Dock, and a
-    space map replaces the Dock with a Space Dock rather than adding one.
+    The client forces map size but never map choice, so `map_terrain` is you
+    telling the seed which map you'll play. Get it wrong and a run is full of
+    checks nobody can send — a land-only map has no Dock, and a space map
+    replaces the Dock with a Space Dock rather than adding one.
     """
     want, unwanted = TERRAIN_CASES[terrain]
     text, why = spoiler_for(TERRAIN_YAML.format(terrain=terrain))
@@ -557,9 +561,9 @@ def run_settings() -> tuple[bool, str]:
 def run_data_floors() -> tuple[bool, str]:
     """Check the recruit checks against the game's database, not the world's.
 
-    Every other test here reads `LOCATION_MIN_EPOCH` and so believes whatever
-    it says. That is exactly how both bugs from the first two-player run got
-    out, and neither was subtle once measured:
+    Every other test here reads `LOCATION_MIN_EPOCH` and believes whatever it
+    says. That's exactly how both bugs from the first two-player run got out,
+    and neither was subtle once measured:
 
       * `Recruit Cataphract` carried epoch 3, the earliest member of the Lancer
         family, when a Cataphract is a Middle Ages unit. Generation put
@@ -570,10 +574,10 @@ def run_data_floors() -> tuple[bool, str]:
         which was missing from a hand-written list of families, so recruiting
         one sent nothing.
 
-    So this reads `data.ssa` directly: every unit in it must have a check, and
-    every check must carry that unit's own epoch. Skipped where the game is not
-    installed, which is the only reason it is here rather than in the world's
-    own test package.
+    So this reads `data.ssa` directly — every unit in it has to have a check,
+    and every check has to carry that unit's own epoch. Skipped where the game
+    isn't installed, which is the only reason it lives here rather than in the
+    world's own test package.
     """
     try:
         from dbobjects import objects, record_name
@@ -582,12 +586,12 @@ def run_data_floors() -> tuple[bool, str]:
         return True, f"skipped: {e}"
     except SystemExit:
         # `ssa_extract` resolves the game's path at import time, and
-        # `install.find_root()` raises SystemExit when there is no install.
+        # `install.find_root()` raises SystemExit when there's no install.
         # SystemExit derives from BaseException, so `except ImportError` let it
-        # straight past and it took the whole run down with it - the settings
+        # straight past and it took the whole run down with it — the settings
         # test, every goal case and the summary never ran, and the suite exited
         # non-zero on a machine that simply has no game installed. The skip
-        # below was written for this and could never be reached.
+        # below was written for exactly this and could never be reached.
         return True, "skipped: no Empire Earth install"
     if not os.path.exists(DEFAULT_SSA):
         return True, "skipped: game data not installed"
@@ -612,10 +616,10 @@ def run_data_floors() -> tuple[bool, str]:
 
     missing, wrong, skipped = [], [], 0
     for db_name in UNIT_FAMILY_BY_NAME:
-        # Deliberate exclusions only - scenario props and the handful of
+        # Deliberate exclusions only — scenario props and the handful of
         # campaign heroes no skirmish offers. Anything else missing a check is
-        # the bug this exists to catch, so the world's own predicate is used
-        # rather than a second list that could quietly grow apart from it.
+        # the bug this exists to catch, so it asks the world's own predicate
+        # rather than a second list that could quietly drift from it.
         if _is_excluded(db_name):
             skipped += 1
             continue
@@ -624,17 +628,18 @@ def run_data_floors() -> tuple[bool, str]:
             missing.append(db_name)
             continue
         raw = db_epoch.get(db_name)
-        # The database counts epochs from 1 at the Prehistoric Age and the rest
-        # of this project counts from 0; see unit_epoch() in gen_objects.py for
-        # how that was pinned down against the running game.
+        # The database counts epochs from 1 at the Prehistoric Age and the
+        # rest of this project counts from 0. See unit_epoch() in
+        # gen_objects.py for how that was pinned down against the running
+        # game.
         want = None if raw is None else max(raw - 1, 0)
         got = LOCATION_MIN_EPOCH.get(loc)
         # A check the match always starts with is pinned to 0 on purpose.
         if want is None or loc in STARTING_LOCATIONS:
             continue
-        # Above the unit's own epoch is fine and often right - the floor also
+        # Above the unit's own epoch is fine and often right — the floor also
         # carries the producing building, so a Prehistoric unit trained at a
-        # Stable waits for the Copper Age. Below it is the bug: it lets
+        # Stable waits for the Copper Age. Below it is the bug, because it lets
         # generation hide an epoch item behind a check that needs that epoch.
         if got is None or got < want:
             wrong.append(f"{loc}: floor {got}, unit's own epoch is {want}")
@@ -643,8 +648,8 @@ def run_data_floors() -> tuple[bool, str]:
         return False, f"{len(missing)} unit(s) with no check: {missing[:3]}"
     if wrong:
         return False, f"{len(wrong)} wrong floor(s): {wrong[:3]}"
-    # A short, named exclusion list is the point: it stops the skip above from
-    # being able to hide a unit by accident.
+    # A short, named exclusion list is the point — it stops the skip above
+    # hiding a unit by accident.
     if len(EXCLUDED_UNIT_NAMES) > 8:
         return False, (f"{len(EXCLUDED_UNIT_NAMES)} hand-excluded units - too "
                        "many to trust; every one should be justified")
@@ -709,10 +714,10 @@ def main():
     total_extra += 3
 
     ok, detail = run_data_floors()
-    # Reported as SKIP rather than PASS when there is no game to read: this is
+    # Reported as SKIP rather than PASS when there's no game to read. This is
     # the only check that reads the database instead of the world's own tables,
-    # so a run without it has not verified the floors at all, and saying PASS
-    # would claim otherwise.
+    # so a run without it hasn't verified the floors at all, and PASS would
+    # claim otherwise.
     mark = "SKIP" if ok and detail.startswith("skipped") else ("PASS" if ok else "FAIL")
     print(f"  {mark}  {'recruit floors vs database':<45s}  {detail}")
     failures += 0 if ok else 1
