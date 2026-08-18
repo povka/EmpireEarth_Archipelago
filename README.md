@@ -38,7 +38,7 @@ No game file is touched. The client works on the running process — mostly read
 4. Copy [`yaml/EmpireEarth.yaml`](yaml/EmpireEarth.yaml) into `Players` and set your slot name and options.
 5. Generate and host as normal.
 6. Open **Empire Earth Client** from the Launcher and connect.
-7. Start a single-player skirmish. You pick the map and civilisation; the client applies the rest from your YAML.
+7. Run `EE-AOC.exe` and start a single-player skirmish. You pick the map and civilisation; the client applies the rest from your YAML.
 
 The client finds the game on its own and reconnects when you return to the menu or start another match.
 
