@@ -925,14 +925,34 @@ Empire Earth:
 """
 
 # terrain -> (checks that must be present, checks that must be absent)
+# terrain -> (must be offered, must not be)
+#
+# One unit from each of the Space Dock's three families, because they're three
+# separate `UNIT_FAMILY_PRODUCERS` entries and a regression in one wouldn't show
+# up in the others: the Capital Ship is `Spaceship`, the Corvette and the
+# Fighter have a family each.
+#
+# The Planetary Fighter and the Spy Satellite are the other half of that. Both
+# sit in the `Space Fighter` family and neither comes from a Space Dock — one is
+# built at an Airport, the other at the Capitol — so they belong on every map.
+# They're pinned here because collapsing producers back to per-family would take
+# them off land maps entirely and nothing else would notice.
 TERRAIN_CASES = {
-    "land_only": ((), ("Build Dock", "Build Naval Yard", "Build Space Dock",
-                       "Recruit Frigate - Juggernaut", "Recruit Space Corvette")),
+    "land_only": (("Recruit Planetary Fighter", "Recruit Spy Satellite"),
+                  ("Build Dock", "Build Naval Yard", "Build Space Dock",
+                   "Build Space Turret", "Recruit Frigate - Juggernaut",
+                   "Recruit Space Corvette", "Recruit Space Capital Ship",
+                   "Recruit Space Fighter")),
     "land_and_water": (("Build Dock", "Build Naval Yard",
-                        "Recruit Frigate - Juggernaut"),
-                       ("Build Space Dock", "Recruit Space Corvette")),
+                        "Recruit Frigate - Juggernaut",
+                        "Recruit Planetary Fighter", "Recruit Spy Satellite"),
+                       ("Build Space Dock", "Build Space Turret",
+                        "Recruit Space Corvette", "Recruit Space Capital Ship",
+                        "Recruit Space Fighter")),
     "space": (("Build Space Dock", "Build Space Turret",
-               "Recruit Space Corvette"),
+               "Recruit Space Corvette", "Recruit Space Capital Ship",
+               "Recruit Space Fighter", "Recruit Space Carrier",
+               "Recruit Space Transport"),
               ("Build Dock", "Build Naval Yard", "Recruit Frigate - Juggernaut")),
 }
 
@@ -956,7 +976,24 @@ def run_terrain(terrain: str) -> tuple[bool, str]:
         return False, f"expected but absent: {missing}"
     if extra:
         return False, f"present but this map cannot build it: {extra}"
-    return True, f"{len(present)} build/recruit checks"
+
+    # And the items, not only the checks. A space seed shipped `Building: Dock`
+    # long after `Build Dock` stopped being in it, because the item pool was
+    # filtered on epoch alone.
+    world_modules()
+    from Locations import building_terrains
+    from Items import BUILDING_ITEM_PREFIX
+
+    items = set(re.findall(rf"^.+?: ({re.escape(BUILDING_ITEM_PREFIX)}.+?)$",
+                           text, re.M))
+    dead = sorted(
+        name for name in items
+        if terrain not in building_terrains(name[len(BUILDING_ITEM_PREFIX):].strip())
+    )
+    if dead:
+        return False, (f"{len(dead)} unlock(s) for buildings this map cannot "
+                       f"raise: {'; '.join(dead)}")
+    return True, f"{len(present)} build/recruit checks, {len(items)} unlocks"
 
 
 def run_settings() -> tuple[bool, str]:

@@ -147,8 +147,13 @@ class EmpireEarthWorld(World):
     def unlock_items(self) -> list[str]:
         """`Building:` and `Wonder:` items this seed uses.
 
-        Anything whose epoch is past the goal can never be built, so an unlock
-        for it is an item that does nothing.
+        Anything this map can't build, or whose epoch is past the goal, can
+        never be raised — so an unlock for it is an item that does nothing.
+        The terrain half was missing and a space seed shipped `Building: Dock`
+        and `Building: Naval Yard`: both are `land_and_water` only, so the
+        build check and every unit they produce were already out of the seed
+        and the items gated nothing at all. Progression items that gate nothing
+        still take places in the pool from items that do.
 
         Buildings and wonders have an option each. Wonders aren't checks —
         building one sends nothing, so the item is the whole reward.
@@ -158,6 +163,7 @@ class EmpireEarthWorld(World):
             out += [
                 building_item(b) for b in LOCKABLE_BUILDINGS
                 if LOCATION_MIN_EPOCH.get(f"Build {b}", 0) <= self.goal_epoch
+                and self.on_this_map(f"Build {b}")
             ]
         if self.gates_wonders:
             out += [wonder_item(w) for w in self.usable_wonders()]
