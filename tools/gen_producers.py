@@ -76,7 +76,7 @@ HEADING_BUILDINGS = {
     "Infantry": ("Barracks",),
     "Cavalry": ("Stable",),
     "Siege & Artillery": ("Siege Factory",),
-    "Ships & Subs": ("Dock", "Navy Yard"),
+    "Ships & Subs": ("Dock", "Naval Yard"),
     "Tanks": ("Tank Factory",),
     "Aircraft": ("Airport",),
     "Cybers": ("Cyber Factory", "Cyber Laboratory"),
@@ -92,7 +92,7 @@ HEADING_BUILDINGS = {
 # does. Written down rather than inferred, because a wrong producer here is the
 # dangerous direction — it tells logic a check is reachable when it isn't.
 FAMILY_FALLBACK = {
-    "Ship Galley": ("Dock", "Navy Yard"),
+    "Ship Galley": ("Dock", "Naval Yard"),
 
     # Art of Conquest's Space Age families. The tables predate the expansion,
     # so they carry no heading for any of these. The producers come from the
@@ -270,7 +270,7 @@ def main():
         blds = ", ".join(f'"{b}"' for b in sorted(producers[fam]))
         lines.append(f'    "{fam}": ({blds},),')
     lines += ["}", ""]
-    with open(OUT, "w", newline="\n") as f:
+    with open(OUT, "w", newline="\n", encoding="utf-8") as f:
         f.write("\n".join(lines))
     print(f"wrote {OUT}")
 

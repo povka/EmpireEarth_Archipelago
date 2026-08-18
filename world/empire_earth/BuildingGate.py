@@ -45,7 +45,7 @@ TEXTURE_ALIASES = {
     "Archery Range": "but_archery",
     "Cyber Factory": "but_mech factory",
     "Cyber Laboratory": "but_mech laboratory",
-    "Navy Yard": "but_naval yard",
+    "Naval Yard": "but_naval yard",
     "Siege Factory": "but_siege workshop",
 
     # Art of Conquest's own buildings, which drop the space the way the wonders
@@ -53,6 +53,14 @@ TEXTURE_ALIASES = {
     # node for them, so they had no measured epoch and stayed out of the pool.
     "Space Dock": "but_spacedock_15t",
     "Space Turret": "but_turret_15t",
+
+    # The defence lines. Every tier of a line shares one icon, so these find
+    # eight `but_tower` nodes and seven `but_wall` ones. Only the earliest is
+    # gated; see TIERED_BUILDINGS.
+    "Tower": "but_tower",
+    "Wall": "but_wall",
+    "Palisade Wall": "but_palisades_04t",
+    "Palisade Tower": "but_palisadestower_04t",
 
     # The wonders. Not one follows the rule, which is why the first attempt at
     # gating them found no node for any of the nine and left them all
@@ -78,6 +86,25 @@ TEXTURE_ALIASES = {
     # mistake, and the client names it in the "no tech tree node found" line.
 }
 
+# Buildings whose later nodes are upgrades rather than variants, so only the
+# earliest is this client's to touch.
+#
+# Everywhere else a second node at the same icon is a late-epoch *variant* and
+# has to be gated too, or it becomes a way round the lock. A defence line is
+# the other thing: its later tiers are what `Upgrade to Wall & Tower - *`
+# opens, and the game keeps them shut until that technology's effect lands.
+#
+# Gating them all would break both directions. Unlocking would fling every
+# tier below the current epoch open, handing out upgrades nobody researched;
+# locking would close a tier the player had already earned, and `apply()` only
+# reopens what the game would have open by now, so it would never come back.
+#
+# The base alone is enough of a lock. An upgrade needs something to upgrade, so
+# a tier without its base building is worth nothing.
+TIERED_BUILDINGS = frozenset({
+    "Tower", "Wall", "Palisade Wall", "Palisade Tower",
+})
+
 # BuildingEpochs.py is generated from this very field, so a node for the right
 # building matches it exactly; the tolerance is kept only for late variants.
 # Checking it catches a texture that matched the wrong node — `but_farm_15t`
@@ -89,6 +116,34 @@ EPOCH_TOLERANCE = 1
 
 def texture_stem(building: str) -> str:
     return TEXTURE_ALIASES.get(building, f"but_{building.lower()}")
+
+
+def node_stem(proc, roster, addr: int, tree: int | None = None) -> str | None:
+    """The button icon this address currently holds, or None if it isn't a node.
+
+    Every cache here keys on the tech tree pointer, and that is not enough on
+    its own. The engine rebuilds the whole tree on a new match *and* on a
+    loaded save, and the allocator hands the same block back often enough that
+    the pointer can come out identical — so a cached address can point at a
+    real, live node of the right tree that happens to be a different object.
+
+    Writing to one of those is how `Research Oracle` and later
+    `Research Monotheism` lost their buttons: a write meant for a locked
+    building landed a few nodes along, on a technology. Reading the icon back
+    is what distinguishes the two, and it costs three reads.
+    """
+    if proc.read_u32(addr) != NODE_VTABLE:
+        return None
+    if tree is not None and proc.read_u32(addr + NODE_TREE) != tree:
+        return None
+    button = proc.read_u32(addr + NODE_BUTTON)
+    if not button:
+        return None
+    texture = roster.read_uwstring(button + BUTTON_TEXTURE)
+    if not texture:
+        return None
+    stem = texture.split("\\")[-1].lower()
+    return stem[:-4] if stem.endswith(".sst") else stem
 
 
 class BuildingGate:
@@ -136,7 +191,9 @@ class BuildingGate:
         if not tree:
             return {}
         if tree == self._tree and self._nodes:
-            return self._nodes
+            if self._cache_intact(tree):
+                return self._nodes
+            self.forget()
 
         self._stems = {texture_stem(b): b for b in buildings}
         found: dict[str, list[int]] = {}
@@ -172,11 +229,29 @@ class BuildingGate:
         for name, hits in found.items():
             if not self._plausible(name, [e for _a, e in hits]):
                 continue
-            kept[name] = [addr for addr, _e in hits]
+            if name in TIERED_BUILDINGS:
+                kept[name] = [min(hits, key=lambda h: h[1])[0]]
+            else:
+                kept[name] = [addr for addr, _e in hits]
 
         self._tree = tree
         self._nodes = kept
         return kept
+
+    def _cache_intact(self, tree: int) -> bool:
+        """Do the cached addresses still hold the buildings they were found as?
+
+        Checked before every use rather than trusted until the match ends,
+        because the client only notices a match ending by the roster emptying
+        for three seconds running — and loading a save rebuilds the tree
+        without ever going quiet that long. See `node_stem`.
+        """
+        for name, addrs in self._nodes.items():
+            want = texture_stem(name)
+            for addr in addrs:
+                if node_stem(self.proc, self.roster, addr, tree) != want:
+                    return False
+        return True
 
     def forget(self) -> None:
         """Drop everything cached, so the next match rescans."""
@@ -231,9 +306,15 @@ class BuildingGate:
     def restore(self) -> int:
         """Reopen every gated building the game would have open by now."""
         epoch = self.current_epoch()
+        tree = self.epochs.tech_tree()
         n = 0
-        for addrs in self._nodes.values():
+        for name, addrs in self._nodes.items():
+            want = texture_stem(name)
             for addr in addrs:
+                # Reopening on the way out is the one write that happens after
+                # the game may have moved on, so it checks hardest.
+                if node_stem(self.proc, self.roster, addr, tree) != want:
+                    continue
                 node_epoch = self.proc.read_i32(addr + NODE_EPOCH)
                 if epoch is None or node_epoch is None or node_epoch > epoch:
                     continue

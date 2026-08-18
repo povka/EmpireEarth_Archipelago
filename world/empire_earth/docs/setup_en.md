@@ -35,7 +35,7 @@ The GOG release does not elevate, so this does not apply there.
 
 ```yaml
 Empire Earth:
-  # reach_epoch, wonder_victory, or either.
+  # reach_epoch or wonder_victory.
   goal: reach_epoch
 
   # Epoch your skirmish starts in, and the one you must reach to win.
@@ -57,7 +57,6 @@ Empire Earth:
   prevent_match_end: true
   opponents: hostile
   ingame_messages: true
-  apply_ingame_win: true
 
   # How much of a resource one bundle grants.
   bundle_size: 500
@@ -102,11 +101,12 @@ and replaced by an Archipelago item.
   the client is running, so no unit check can be missed.
 - **Researching a technology** sends a check. The technology itself does
   nothing when researched — its benefit arrives separately as a `Tech:` item.
-- **Each wonder built** sends a check when `wonders_for_victory` is above 0.
-  Wonders count when they are finished, not when the foundation goes down.
+- **Building a wonder** sends nothing. The `Wonder:` item is the reward, and
+  raising the wonder is what you do with it. Wonders count towards a wonder
+  goal when they are finished, not when the foundation goes down.
 
-Your `goal` decides what finishes the seed: reaching `goal_epoch`, completing a
-wonder victory, or either of the two.
+Your `goal` decides what finishes the seed: reaching `goal_epoch`, or
+completing a wonder victory.
 
 Because Empire Earth ends the match as soon as a wonder victory happens, the two
 options must agree — generation refuses `reach_epoch` with wonders enabled, and

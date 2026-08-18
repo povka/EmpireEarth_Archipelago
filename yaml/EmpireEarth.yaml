@@ -10,12 +10,11 @@ Empire Earth:
   # so the match always matches the seed. Cheat codes are always off.
 
   # What completes the seed:
-  #   reach_epoch     reach goal_epoch          (needs wonders_for_victory: 0)
   #   wonder_victory  build the wonders         (needs wonders_for_victory > 0)
-  #   either          whichever you manage first
+  #   reach_epoch     reach goal_epoch          (needs wonders_for_victory: 0)
   # Empire Earth ends the match on a wonder victory, so wonders_for_victory and
   # this option have to agree. Generation refuses a seed where they don't.
-  goal: reach_epoch
+  goal: wonder_victory
 
   # The epoch your skirmish STARTS in. The client sets it for you. Has to come
   # before goal_epoch. One of:
@@ -32,10 +31,20 @@ Empire Earth:
   #   atomic_age_modern, digital_age, nano_age, space_age
   goal_epoch: space_age
 
-  # Put building and wonder permissions in the item pool. Locked buildings
-  # leave your build menu until their `Building:` or `Wonder:` item arrives.
-  # Turn it off and you can build whatever your epoch allows.
+  # Put building permissions in the item pool. A locked building leaves your
+  # build menu until its `Building:` item arrives. Turn it off and you can build
+  # whatever your epoch allows.
+  #
+  # This is also what decides the shape of the seed. A `Building:` item is the
+  # only thing besides an epoch that any rule asks for, so turning it off and
+  # leaving wonder_unlocks on means `Epoch:` and `Wonder:` are the only
+  # progression items there are.
   building_unlocks: true
+
+  # The same for wonders, on its own option because the two do different jobs:
+  # a locked building shapes the whole run, a locked wonder is the reward for
+  # finding it. Building a wonder sends no check either way.
+  wonder_unlocks: true
 
   # Turn research into checks. Researching a technology sends its check and
   # gives you nothing; the effect comes back as a `Tech:` item.
@@ -70,11 +79,11 @@ Empire Earth:
   # Population limit, 50-1200. Rounded to the nearest 50 the game offers.
   unit_limit: 300
 
-  # Wonders needed to win, in game and in Archipelago alike. Has to be 0 for the
-  # reach_epoch goal and 1-6 for the others. Building a wonder sends no check —
-  # the `Wonder:` item is the reward and raising it is what you do with it. The
-  # Time Machine only counts in a Space Age seed.
-  wonders_for_victory: 0
+  # Wonders needed to win, in game and in Archipelago alike. Has to be 1-6 for
+  # wonder_victory and 0 for reach_epoch. Building a wonder sends no check — the
+  # `Wonder:` item is the reward and raising it is what you do with it. Any map
+  # offers exactly six, so 6 means all of them.
+  wonders_for_victory: 1
 
   reveal_map: false
   use_custom_civs: false
@@ -103,12 +112,6 @@ Empire Earth:
   # writing its memory. No game file is touched, and the on-screen overlay keeps
   # running either way.
   ingame_messages: true
-
-  # When you complete the Archipelago goal, have Empire Earth end the match as a
-  # win instead of leaving it running. It briefly detours one function so the
-  # game runs its own end-of-match code; the detour undoes itself immediately
-  # and no file is touched.
-  apply_ingame_win: true
 
   # How much of a resource one bundle is worth.
   bundle_size: 3500

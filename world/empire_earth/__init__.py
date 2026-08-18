@@ -20,6 +20,7 @@ from .Locations import (
     building_terrains,
     wonder_terrains,
     NO_PROGRESSION_LOCATIONS,
+    PRIORITY_LOCATIONS,
     LOCATION_MIN_EPOCH,
     LOCATION_NAME_TO_ID,
     EXCLUDED_TECHNOLOGIES,
@@ -28,6 +29,7 @@ from .Locations import (
     WONDER_MIN_EPOCH,
     EmpireEarthLocation,
 )
+from .TechUnlocks import TECH_REQUIRES
 from .Options import EmpireEarthOptions
 
 
@@ -99,10 +101,8 @@ class EmpireEarthWorld(World):
     @property
     def wants_wonders(self) -> bool:
         """True when a wonder victory is one of the ways to finish."""
-        return self.options.goal.value in (
-            self.options.goal.option_wonder_victory,
-            self.options.goal.option_either,
-        )
+        return (self.options.goal.value
+                == self.options.goal.option_wonder_victory)
 
     @property
     def terrain(self) -> str:
@@ -132,21 +132,36 @@ class EmpireEarthWorld(World):
     def gates_buildings(self) -> bool:
         return bool(self.options.building_unlocks.value)
 
+    @property
+    def gates_wonders(self) -> bool:
+        """Its own option, because the two do different jobs.
+
+        A `Building:` item is what every building, unit and technology rule
+        asks for, so gating buildings is what makes those items progression.
+        A `Wonder:` item gates only the wonder itself. Turning buildings off
+        and leaving wonders on is what gets a seed down to `Epoch:` and
+        `Wonder:` as the only progression there is.
+        """
+        return bool(self.options.wonder_unlocks.value)
+
     def unlock_items(self) -> list[str]:
         """`Building:` and `Wonder:` items this seed uses.
 
         Anything whose epoch is past the goal can never be built, so an unlock
         for it is an item that does nothing.
 
-        Wonders are gated by the same option and aren't checks — building one
-        sends nothing, so the item is the whole reward.
+        Buildings and wonders have an option each. Wonders aren't checks —
+        building one sends nothing, so the item is the whole reward.
         """
-        if not self.gates_buildings:
-            return []
-        return [
-            building_item(b) for b in LOCKABLE_BUILDINGS
-            if LOCATION_MIN_EPOCH.get(f"Build {b}", 0) <= self.goal_epoch
-        ] + [wonder_item(w) for w in self.usable_wonders()]
+        out = []
+        if self.gates_buildings:
+            out += [
+                building_item(b) for b in LOCKABLE_BUILDINGS
+                if LOCATION_MIN_EPOCH.get(f"Build {b}", 0) <= self.goal_epoch
+            ]
+        if self.gates_wonders:
+            out += [wonder_item(w) for w in self.usable_wonders()]
+        return out
 
     def researchable(self, epoch: int) -> bool:
         """Is this epoch's technology part of the seed?
@@ -235,10 +250,8 @@ class EmpireEarthWorld(World):
 
     @property
     def wants_epoch(self) -> bool:
-        return self.options.goal.value in (
-            self.options.goal.option_reach_epoch,
-            self.options.goal.option_either,
-        )
+        return (self.options.goal.value
+                == self.options.goal.option_reach_epoch)
 
     def usable_wonders(self) -> list[str]:
         """Wonders this seed can actually build, earliest-available first.
@@ -274,7 +287,7 @@ class EmpireEarthWorld(World):
         out: list[tuple[int, list[str]]] = []
         for name in self.usable_wonders():
             epoch = WONDER_MIN_EPOCH[name]
-            unlocks = [wonder_item(name)] if self.gates_buildings else []
+            unlocks = [wonder_item(name)] if self.gates_wonders else []
             out.append((epoch, unlocks))
         return out
 
@@ -302,7 +315,7 @@ class EmpireEarthWorld(World):
                 "Empire Earth: wonders_for_victory is "
                 f"{self.wonders_needed}, which lets the game end in a wonder "
                 "victory, but goal is 'reach_epoch'. Set wonders_for_victory "
-                "to 0, or pick the 'wonder_victory' or 'either' goal."
+                "to 0, or pick the 'wonder_victory' goal."
             )
 
         available = len(self.wonder_options())
@@ -312,6 +325,22 @@ class EmpireEarthWorld(World):
                 f"but only {available} wonder(s) can be built by "
                 f"{EPOCH_NAMES[self.goal_epoch]}."
             )
+
+        # The next epoch goes in an early sphere, which in practice means one of
+        # the four opening checks.
+        #
+        # Those four are the whole of sphere 1 — a match starts with a Capitol
+        # and the units it makes, and everything else needs an epoch or an
+        # unlock first. `PRIORITY` alone deadlocked the fill: the priority pass
+        # sweeps with every progression item in hand, so all four looked
+        # reachable, it locked four items that opened nothing, and the 43
+        # remaining progression items had nowhere to go.
+        #
+        # `distribute_early_items` runs before the priority pass and prefers
+        # priority locations, so this puts the one item that opens the seed
+        # where it has to be and the other three fill normally.
+        self.multiworld.early_items[self.player][
+            f"Epoch: {EPOCH_NAMES[self.starting_epoch + 1]}"] = 1
 
     def included_epochs(self) -> range:
         """Epochs that become items and checks.
@@ -339,6 +368,8 @@ class EmpireEarthWorld(World):
             # menu. Nothing the seed needs may rest on those.
             if name in NO_PROGRESSION_LOCATIONS:
                 location.progress_type = LocationProgressType.EXCLUDED
+            elif name in PRIORITY_LOCATIONS:
+                location.progress_type = LocationProgressType.PRIORITY
             empire.locations.append(location)
         self.multiworld.regions.append(empire)
 
@@ -389,11 +420,27 @@ class EmpireEarthWorld(World):
             and self.on_this_map(name)
         }
         if self.options.technology_checks.value:
-            wanted |= {
+            techs = {
                 name for name in TECH_LOCATIONS
                 if self.researchable(LOCATION_MIN_EPOCH.get(name, 0))
                 and name[len("Research "):] not in EXCLUDED_TECHNOLOGIES
             }
+            # A chained technology has no button until its predecessor's effect
+            # is applied, so one whose predecessor this seed never offers can
+            # never be researched. Dropped rather than shipped as a check
+            # nobody can send. Repeated because dropping one can orphan the
+            # next; EXCLUDED_TECHNOLOGIES is empty today, so this settles on
+            # the first pass.
+            while True:
+                gone = {
+                    name for name in techs
+                    if (earlier := TECH_REQUIRES.get(name[len("Research "):]))
+                    and f"Research {earlier}" not in techs
+                }
+                if not gone:
+                    break
+                techs -= gone
+            wanted |= techs
         return wanted
 
     def set_rules(self) -> None:
@@ -418,6 +465,18 @@ class EmpireEarthWorld(World):
             floor = LOCATION_MIN_EPOCH.get(name, 0)
             needed = ([] if floor <= self.starting_epoch
                       else self.epoch_items_up_to(floor))
+            # A chained technology used to require the `Tech:` item below it,
+            # because suppressing a technology's effect suppressed the unlock
+            # it carried along with the benefit. The client puts the unlock
+            # back itself now (`TechChains`), so researching opens the next
+            # tier and only the benefit waits for the item.
+            #
+            # Dropping the requirement is what makes a `Tech:` item ordinary.
+            # An item a rule names has to be progression — the reachability
+            # sweep collects nothing else — so while this line existed, 72 of
+            # them were progression and a research check could never hold an
+            # epoch or a wonder without the technology below it being
+            # load-bearing too.
             # Independent, and both apply. An unlock doesn't skip the epoch —
             # the game tests that separately in the same predicate — and
             # reaching the epoch doesn't skip the unlock.
@@ -507,7 +566,6 @@ class EmpireEarthWorld(World):
             "goal": self.options.goal.current_key,
             "opponents": self.options.opponents.current_key,
             "ingame_messages": bool(self.options.ingame_messages.value),
-            "apply_ingame_win": bool(self.options.apply_ingame_win.value),
             # Kept so an older client still understands this seed.
             "force_peace": self.options.opponents.value
             == self.options.opponents.option_allied,
@@ -517,7 +575,7 @@ class EmpireEarthWorld(World):
             # items for those its goal epoch reaches, and gating one whose item
             # can never arrive locks it for the whole run with no way to open
             # it.
-            "gated_wonders": self.usable_wonders() if self.gates_buildings else [],
+            "gated_wonders": self.usable_wonders() if self.gates_wonders else [],
             "technology_checks": bool(self.options.technology_checks.value),
             "wonders_needed": self.wonders_needed if self.wants_wonders else 0,
             "match_settings": self.match_settings(),

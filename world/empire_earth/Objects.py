@@ -25,7 +25,7 @@ BUILDINGS: dict[str, str] = {
     'b  Hospital': 'Hospital',
     'b  Siege Factory': 'Siege Factory',
     'b  Stable': 'Stable',
-    'b  Navy Yard': 'Navy Yard',
+    'b  Navy Yard': 'Naval Yard',
     'b  Airport': 'Airport',
     'b  Tank Factory': 'Tank Factory',
     'b  Cyber Factory': 'Cyber Factory',
@@ -35,12 +35,14 @@ BUILDINGS: dict[str, str] = {
     'b  Priest Tower': 'Priest Tower',
     'b  AA15 Missile Tower': 'AA15 Missile Tower',
     'b  Space Turret': 'Space Turret',
-    'b  Guard Tower - Palisades': 'Guard Tower - Palisades',
     'b  Teleporter': 'Teleporter',
     'b  Market (CP)': 'Market (CP)',
     'b  Guard Tower - Bamboo': 'Guard Tower - Bamboo',
-    'b  Pyramid': 'Pyramid',
     'b  FTL Research Center': 'FTL Research Center',
+    'b  Guard Tower - Paleo': 'Tower',
+    'b  Wall - Copper': 'Wall',
+    'b  Wall - Palisades': 'Palisade Wall',
+    'b  Guard Tower - Palisades': 'Palisade Tower',
 }
 
 # family display names, in database order
@@ -799,7 +801,7 @@ BUILDING_MIN_EPOCH: dict[str, int] = {
     'Hospital': 3,
     'Siege Factory': 4,
     'Stable': 3,
-    'Navy Yard': 10,
+    'Naval Yard': 10,
     'Airport': 10,
     'Tank Factory': 10,
     'Cyber Factory': 13,
@@ -809,12 +811,14 @@ BUILDING_MIN_EPOCH: dict[str, int] = {
     'Priest Tower': 1,
     'AA15 Missile Tower': 15,
     'Space Turret': 13,
-    'Guard Tower - Palisades': 6,
     'Teleporter': 3,
     'Market (CP)': 10,
     'Guard Tower - Bamboo': 6,
-    'Pyramid': 1,
     'FTL Research Center': 3,
+    'Tower': 1,
+    'Wall': 3,
+    'Palisade Wall': 0,
+    'Palisade Tower': 6,
 }
 
 # family -> earliest epoch any of its members appears in
@@ -879,8 +883,30 @@ WONDERS: dict[str, tuple[str, int]] = {
     'w  Lighthouse at Alexandria': ('Pharos Lighthouse', 3),
     'w  Orbital Space Station': ('Orbital Space Station', 14),
     'w  Temple of Zeus': ('Temple of Zeus', 3),
-    'w  Time Machine': ('Time Machine', 13),
     'w  Tower of Babylon': ('Tower of Babylon', 3),
+}
+
+# Every tier of a defence line -> the base tier its check is keyed
+# on. Building any tier sends the line's check, so an upgraded tower
+# still sends `Build Tower`.
+BUILDING_TIERS: dict[str, str] = {
+    'b  Guard Tower - Paleo': 'b  Guard Tower - Paleo',
+    'b  Guard Tower - Copper': 'b  Guard Tower - Paleo',
+    'b  Guard Tower - Bronze': 'b  Guard Tower - Paleo',
+    'b  Guard Tower - Middle': 'b  Guard Tower - Paleo',
+    'b  Guard Tower - Imperial': 'b  Guard Tower - Paleo',
+    'b  Guard Tower - WW1': 'b  Guard Tower - Paleo',
+    'b  Guard Tower - Digital': 'b  Guard Tower - Paleo',
+    'b  Guard Tower - Space': 'b  Guard Tower - Paleo',
+    'b  Guard Tower - Palisades': 'b  Guard Tower - Palisades',
+    'b  Wall - Copper': 'b  Wall - Copper',
+    'b  Wall - Bronze': 'b  Wall - Copper',
+    'b  Wall - Middle': 'b  Wall - Copper',
+    'b  Wall - Imperial': 'b  Wall - Copper',
+    'b  Wall - WW1': 'b  Wall - Copper',
+    'b  Wall - Digital': 'b  Wall - Copper',
+    'b  Wall - Space': 'b  Wall - Copper',
+    'b  Wall - Palisades': 'b  Wall - Palisades',
 }
 
 FAMILY_FIELD_OFFSET = 0x68  # within a dbobjects.dat record

@@ -1735,3 +1735,119 @@ run that ends early looks a lot like a test run that finished.
   silently.
 - `CommonContext.seed_name` was empty when `Connected` arrived, so the seed key
   is read directly off the `RoomInfo` packet instead.
+
+---
+
+## Button icons: painting a sent check green
+
+Unfinished. The idea is that a unit whose check has already gone out shows a
+green icon in the build menu until its slot moves on. What follows is what was
+established, what was disproved, and where the next attempt should start —
+written down because most of it cost a live match to learn.
+
+### `.sst` is a TGA with a 15-byte hat
+
+Not a proprietary format. Fifteen bytes, then a standard uncompressed 24-bit
+TGA, then BGR pixel triples:
+
+    +0x00  15-byte prefix; bytes 6-7 and 10-11 repeat width and height
+    +0x0F  TGA header: idlen, cmaptype 0, imagetype 2, ..., width, height, bpp
+    +0x21  width * height * 3 bytes, B G R
+
+`but_rockthrower_02T.sst` is 64x64x24, and 33 + 64*64*3 = 12,321, the exact
+file size. A 32-bit file from a texture mod checks out the same way at
+128x128: 33 + 128*128*4 = 65,569.
+
+`tools/gen_green_icons.py` tints 582 of 585 button icons on that basis, reading
+both editions' archives and writing nothing but pixels. The three it skips are
+not 24-bit uncompressed: `but_border`, `but_coffer dam_05`, `but_rommel_10t`.
+
+Icon names in the tech tree are **irregular**. Some carry `textures\` and
+`.sst`, some are bare (`BUT_ICBM_15T`), and the case is arbitrary
+(`but_rockthrower_02T`, `but_CENTURION_04t`). Anything deriving a filename from
+them has to cope with all three.
+
+### The object that holds the path
+
+Vtable `0x0083E4F4`, reached from a tech tree node's `+0x10`:
+
+    +0x04  texture path, a UString: vtable +0x04, buffer +0x08, length +0x0C
+    +0x14  the loaded GETexture*, null until it loads
+
+`0x004D572E` loads it, through the refcounting wrapper at `0x004D5690`:
+
+    lea  eax, [esi + 4]        ; the path
+    call [0x837680]            ; GETextureManager::LoadTexture(UString&, desc&)
+    mov  [esi + 0x14], eax     ; keep the GETexture*
+    inc  [eax + 4]             ; its refcount
+
+Named imports worth knowing: `0x837680` LoadTexture, `0x837668`
+`GETexture::Dereference`, `0x837690` `GETextureManager::ReloadTexture`,
+`0x83768C` `GEBitmap::SetTexture`.
+
+**Repointing works.** Writing a different path into the UString and letting the
+button load draws the new texture — confirmed in game twice, once with an
+unrelated icon and once with a tinted file, which came out green.
+
+There is no capacity field. `+0x0C` is the *length*, so writing in place can
+only ever shorten the string; a path longer than the one already there
+overflows the allocation. Either keep replacement names shorter, or allocate a
+page and repoint the buffer the way `Banner` does.
+
+### What is still open
+
+Whether a filename absent from `data.ssa` works. The one attempt crashed the
+game, but it changed two things at once — a new name *and* a button whose
+texture was already loaded — so neither is convicted. The successful green test
+used an existing name (`but_eiffeltower.sst`, overwritten as a loose file) on an
+unloaded button. Separating the two needs a button with `+0x14` still null
+pointed at a `g_*` name.
+
+Buttons are **global to the game session**, not per match. A path written into
+one survives restarting the match, which is worth remembering: a search for
+`rockthrower` came back empty for several matches because an earlier write had
+renamed it, and that looked like a missing node rather than a self-inflicted
+wound.
+
+### The checkerboard is somewhere else
+
+The game greys a button when you cannot afford the unit, so there is clearly a
+runtime appearance switch. It is not on either object above. Dumped with food
+at 0 and again at 30, the same node and the same texture-holder are
+**byte-for-byte identical** — nothing there encodes it.
+
+It belongs to `UIButton`, which is an engine class taking three bitmaps:
+
+    0x837E70  SetNormalBitmap    0x837E74  SetFocusedBitmap
+    0x837E78  SetPressedBitmap   0x837D3C  the constructor
+
+Menu buttons are 260 bytes, built by one of nineteen call sites and re-vtabled
+to a game subclass that overrides exactly one method — its destructor, at
+`0x00571BD8`. So the drawing is entirely the engine's, driven by state set from
+outside.
+
+`0x00594FB0` and its six neighbours are **not** the unit menu; scanning a live
+match for vtable `0x00842BFC` with a building selected finds nothing. That
+cluster is some other form.
+
+Note the lifetime problem before choosing this route: menu buttons appear when
+you select a building and go when you deselect, so anything set on one has to
+be reapplied every selection. The texture path does not have that problem — it
+lives on the node.
+
+### Where to start next
+
+Spending resources to zero is a **repeatable trigger** that makes the game
+update the button. Every probe that failed here lacked one. Put a hardware
+breakpoint on a live `UIButton` while affordability flips and the mechanism
+names itself.
+
+Dead ends, so nobody spends an afternoon on them again:
+
+- `+0x08` on the texture-holder is the string buffer, not a surface. Nulling it
+  achieves nothing but a corrupt path.
+- `+0x14` is the surface, but no thread reads it across 150 seconds with the
+  menu open, so watching it finds nothing.
+- Watching the path string finds nothing once the texture has loaded, because
+  it is only read at load time. `hwbp.py --watch` also takes a single address
+  and covers four bytes, which is not a whole path.

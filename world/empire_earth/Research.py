@@ -59,7 +59,9 @@ class ResearchWatch:
         if not tree:
             return {}
         if tree == self._tree and self._nodes:
-            return self._nodes
+            if self._cache_intact(tree):
+                return self._nodes
+            self.forget()
 
         wanted = set(keys)
         found: dict[tuple[str, int], int] = {}
@@ -91,6 +93,25 @@ class ResearchWatch:
         self._tree = tree
         self._nodes = found
         return found
+
+    def _cache_intact(self, tree: int) -> bool:
+        """Do the cached addresses still hold the technologies they were found as?
+
+        The tree pointer alone can't tell a rebuilt tree from the one these
+        addresses came from; see `BuildingGate.node_stem`. Reading stale
+        addresses here doesn't break the game, it reports research nobody did —
+        which is how a reconnect once sent a burst of checks that hadn't been
+        earned.
+        """
+        try:
+            from .BuildingGate import node_stem
+        except ImportError:          # loaded as a top-level module by tools/
+            from BuildingGate import node_stem
+
+        for (stem, _epoch), addr in self._nodes.items():
+            if node_stem(self.proc, self.roster, addr, tree) != stem:
+                return False
+        return True
 
     def forget(self) -> None:
         """Drop the cache, so the next match rescans."""

@@ -16,6 +16,7 @@ ROSTER_OFFSET = 0x40
 ROSTER_STRIDE = 8
 ROSTER_MAX = 32768           # slots to sweep; see units() for why overshooting
                              # is safe now
+SWEEP_CHUNK = 0x1000         # one page, for when the sweep runs off the heap
 UNIT_OWNER_OFFSET = 0x18     # -> the owning player object
 UNIT_VTABLE = 0x00846DDC     # EEComplexUnit
 UNIT_DEF_OFFSET = 0x2C       # -> type definition
@@ -42,6 +43,8 @@ class Roster:
         self.proc = proc
         self.profile = profile
         self._uw_vtable = None
+        # Definition address -> type name, for the length of one roster walk.
+        # See units() for why it can't live longer than that.
         self._def_cache: dict[int, str] = {}
         # Diagnostics for `/roster`: how far the last walk reached, and how
         # many objects it found whose type name would not read. Both were
@@ -84,6 +87,37 @@ class Roster:
 
     # --- the roster -------------------------------------------------------
 
+    def _sweep(self, obj: int) -> bytes:
+        """The roster array, as much of it as is really mapped.
+
+        `ReadProcessMemory` is all or nothing. One unmapped page anywhere in
+        the range and the whole call fails, returning nothing rather than the
+        part that was fine.
+
+        That matters because the sweep is deliberately longer than any real
+        roster — see `units()` — so it runs off the end of the heap block as a
+        matter of course. Usually the pages past it are mapped and nobody
+        notices. When they aren't, a 256 KB read of a perfectly good roster
+        comes back empty, the client sees no objects, decides it isn't in a
+        match, and sends nothing. Measured in exactly that state: 22 objects
+        owned, 64 KB readable, the full sweep failing.
+
+        One read while that works, chunks that stop at the first missing page
+        when it doesn't.
+        """
+        want = ROSTER_MAX * ROSTER_STRIDE
+        blob = self.proc.read(obj + ROSTER_OFFSET, want)
+        if blob:
+            return blob
+        out = bytearray()
+        while len(out) < want:
+            chunk = self.proc.read(obj + ROSTER_OFFSET + len(out),
+                                   min(SWEEP_CHUNK, want - len(out)))
+            if not chunk:
+                break
+            out += chunk
+        return bytes(out)
+
     def units(self) -> list[int]:
         """Addresses of every EEComplexUnit the local player owns.
 
@@ -114,9 +148,20 @@ class Roster:
         obj = self.player_object()
         if obj is None:
             return []
-        blob = self.proc.read(obj + ROSTER_OFFSET, ROSTER_MAX * ROSTER_STRIDE)
+        blob = self._sweep(obj)
         if not blob:
             return []
+        # One walk's worth, no longer. A type definition is a heap object the
+        # game frees and rebuilds — on a new match, and on an upgrade — and the
+        # allocator hands the same address back, so a name cached against one
+        # outlives what it described. Upgrading Gilgamesh to Hannibal sent no
+        # check for either Hannibal or the Alexander the Great it pairs with,
+        # because the upgraded hero's definition landed on an address the cache
+        # still had Gilgamesh at. Reading the name back costs a few reads per
+        # object per poll, which is what the cache was saving and not worth a
+        # check that never fires — or worse, one that fires for a unit you
+        # never built.
+        self._def_cache.clear()
 
         out, seen = [], set()
         self.last_slot = -1
@@ -131,6 +176,46 @@ class Roster:
             seen.add(ptr)
             out.append(ptr)
             self.last_slot = off // ROSTER_STRIDE
+        return out
+
+    def units_deep(self) -> list[int]:
+        """Every object the local player owns, found by sweeping the heap.
+
+        The roster array is not the whole story. Measured live: 49 objects in
+        the array against 53 owned, and the four it left out were three
+        `Citizen Projectile`s nobody checks and `h2-4 Hannibal (Morale)`. A
+        hero is never listed there, which is why one has never sent its check —
+        Charlemagne was reported missing long before Hannibal was, and the
+        array walk was rebuilt twice without either turning up.
+
+        Ownership is what makes sweeping the heap safe, and it is the same test
+        the array walk already trusts: `+0x18` is the owning player object.
+        Every object the array *does* list also turns up here, so this is a
+        strict superset rather than a different answer.
+
+        It costs a pass over private memory, about two thirds of a second
+        against a poll every half second, so the client runs it on a slow
+        cadence and unions the result in rather than doing this every time.
+        """
+        obj = self.player_object()
+        if obj is None:
+            return []
+        out = []
+        needle = struct.pack("<I", UNIT_VTABLE)
+        for base, data in self.proc.snapshot(want_image=False,
+                                             want_private=True,
+                                             want_mapped=False):
+            off = -1
+            while True:
+                off = data.find(needle, off + 1)
+                if off < 0:
+                    break
+                if off % 4:
+                    continue
+                addr = base + off
+                if self.proc.read_u32(addr + UNIT_OWNER_OFFSET) == obj:
+                    out.append(addr)
+        self._def_cache.clear()
         return out
 
     def type_name(self, unit: int) -> str | None:
@@ -151,15 +236,18 @@ class Roster:
         raw = self.proc.read(unit + CONSTRUCTED_OFFSET, 1)
         return bool(raw and raw[0])
 
-    def survey(self) -> tuple[set[str], set[str]]:
+    def survey(self, deep: bool = False) -> tuple[set[str], set[str]]:
         """(every type owned, types with at least one finished instance).
 
         Both come from one pass over the roster, because the callers want them
         together and each pass costs a read per object.
+
+        `deep` sweeps the heap instead of the roster array — slower, and the
+        only way to see a hero. See units_deep.
         """
         owned: set[str] = set()
         finished: set[str] = set()
-        for unit in self.units():
+        for unit in (self.units_deep() if deep else self.units()):
             name = self.type_name(unit)
             if not name:
                 continue
@@ -177,10 +265,10 @@ class Roster:
                 names.add(name)
         return names
 
-    def counts(self) -> dict[str, int]:
+    def counts(self, deep: bool = False) -> dict[str, int]:
         out: dict[str, int] = {}
         self.unnamed = 0
-        for unit in self.units():
+        for unit in (self.units_deep() if deep else self.units()):
             name = self.type_name(unit)
             if name:
                 out[name] = out.get(name, 0) + 1

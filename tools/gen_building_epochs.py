@@ -114,7 +114,7 @@ def main():
         if building in found:
             lines.append(f'    "{building}": {found[building]},')
     lines += ["}", ""]
-    with open(OUT, "w", newline="\n") as f:
+    with open(OUT, "w", newline="\n", encoding="utf-8") as f:
         f.write("\n".join(lines))
     print(f"\nwrote {OUT}")
 

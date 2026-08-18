@@ -92,7 +92,48 @@ BUILDING_EXCLUDE_MARKERS = (
     # `dbobjects.dat` alone, which is the number this project doesn't trust for
     # buildings.
     "farm",
+    # The Pyramid is in the database, has a tech tree node and measures cleanly
+    # at the Prehistoric Age, and no match has ever offered it — checked in a
+    # Space Age game where every other building was there. Whatever gates it
+    # isn't anything this project can see, so it stops being a check rather
+    # than staying one nobody can send.
+    "pyramid",
 )
+
+# The tiered defence lines, which the markers above drop every tier of.
+#
+# Dropping them was right while they looked like nothing but epoch variants.
+# The effect tables say otherwise: each line has one base tier the game offers
+# outright, and the later tiers are what `Upgrade to Wall & Tower - *` opens —
+# `0x005CB92B` hands the technology's `[record+0x28]` to the tech tree, and for
+# that chain the targets are `but_wall`, `but_tower` and `but_gate`.
+#
+# So the check is the *line*, keyed on its base tier. Every tier shares the
+# base's icon and sends the same check, which is what keeps it sendable after
+# an upgrade renames what you own. Tier lists are explicit because the icon is
+# the only thing that really groups them and this generator can't read icons:
+# `Guard Tower - Palisades` and `Guard Tower - Bamboo` read like tiers of the
+# Paleo line and are separate lines with their own icons. The counts check out
+# against the running tree — eight `but_tower` nodes, seven `but_wall`.
+#
+# base record -> (display name, every tier including the base)
+BUILDING_LINES = {
+    "b  Guard Tower - Paleo": ("Tower", (
+        "b  Guard Tower - Paleo", "b  Guard Tower - Copper",
+        "b  Guard Tower - Bronze", "b  Guard Tower - Middle",
+        "b  Guard Tower - Imperial", "b  Guard Tower - WW1",
+        "b  Guard Tower - Digital", "b  Guard Tower - Space",
+    )),
+    "b  Wall - Copper": ("Wall", (
+        "b  Wall - Copper", "b  Wall - Bronze", "b  Wall - Middle",
+        "b  Wall - Imperial", "b  Wall - WW1", "b  Wall - Digital",
+        "b  Wall - Space",
+    )),
+    "b  Wall - Palisades": ("Palisade Wall", ("b  Wall - Palisades",)),
+    "b  Guard Tower - Palisades": ("Palisade Tower",
+                                   ("b  Guard Tower - Palisades",)),
+}
+
 
 # Families that hold no recruitable unit. Everything else in the database's
 # family table gets taken, rather than a hand-picked list.
@@ -201,6 +242,8 @@ def unit_epoch(raw: int, name: str = "") -> int:
 # your item list, so it should be the one the game uses.
 DISPLAY_OVERRIDES = {
     "Lighthouse at Alexandria": "Pharos Lighthouse",
+    # The build menu says Naval Yard. Only the database says Navy.
+    "Navy Yard": "Naval Yard",
 }
 
 
@@ -213,18 +256,27 @@ def pretty(name: str) -> str:
     return DISPLAY_OVERRIDES.get(tidy, tidy)
 
 
+# Wonders the `w ` prefix and category 28 both vouch for, and no skirmish
+# offers. The Time Machine is a scenario wonder — it carries every marker a
+# real one does and a Nano Age epoch, and it is not in the build menu.
+WONDER_EXCLUDE = {"Time Machine"}
+
+
 def wonders(ssa: str):
     """The buildable wonders, as (index, raw name, display name, min epoch).
 
     Category 28 alone isn't enough — it also holds `x RADAR Wonder` and
     `x Lighthouse`, scenario props like `x Eiffel Tower` and
     `x Buckingham Palace` rather than anything a skirmish can build. The game's
-    own `w ` prefix is what marks a real wonder, so both have to agree.
+    own `w ` prefix is what marks a real wonder, so both have to agree — and
+    for one wonder even that isn't enough; see WONDER_EXCLUDE.
     """
     out = []
     for i, r, _size in objects(ssa):
         name = record_name(r)
         if not name.startswith("w "):
+            continue
+        if pretty(name) in WONDER_EXCLUDE:
             continue
         if struct.unpack_from("<i", r, CATEGORY_OFF)[0] != WONDER_CATEGORY:
             continue
@@ -252,13 +304,24 @@ def build(ssa: str):
             min_epoch[n] = struct.unpack_from("<i", r, MIN_EPOCH_OFF)[0]
 
     buildings = []
+    index_of = {}
     for i, n, f in recs:
         if not n.startswith("b "):
             continue
+        index_of[n] = i
+        if n in BUILDING_LINES:
+            continue        # added below, under the line's own display name
         low = n.lower()
         if any(m in low for m in BUILDING_EXCLUDE_MARKERS):
             continue
         buildings.append((i, n, pretty(n), min_epoch.get(n, 0)))
+    # Put the defence lines back, under their own display names. The database
+    # epoch is ignored for these the way it is for every building — the tech
+    # tree's is what BuildingEpochs.py measures and what the world gates on.
+    for base, (display, _tiers) in BUILDING_LINES.items():
+        if base in index_of:
+            buildings.append((index_of[base], base, display,
+                              min_epoch.get(base, 0)))
 
     unit_families = []
     members: list[tuple[str, str]] = []
@@ -365,6 +428,17 @@ def emit(buildings, unit_families, members, wonder_list) -> str:
     lines += [
         "}",
         "",
+        "# Every tier of a defence line -> the base tier its check is keyed",
+        "# on. Building any tier sends the line's check, so an upgraded tower",
+        "# still sends `Build Tower`.",
+        "BUILDING_TIERS: dict[str, str] = {",
+    ]
+    for base, (_display, tiers) in sorted(BUILDING_LINES.items()):
+        for tier in tiers:
+            lines.append(f"    {tier!r}: {base!r},")
+    lines += [
+        "}",
+        "",
         "FAMILY_FIELD_OFFSET = 0x68  # within a dbobjects.dat record",
         "",
     ]
@@ -399,7 +473,7 @@ def main():
           f"{len(buildings) + len(unit_families) + len(wonder_list)}")
 
     if args.write:
-        with open(OUT, "w", encoding="utf-8") as f:
+        with open(OUT, "w", newline="\n", encoding="utf-8") as f:
             f.write(emit(buildings, unit_families, members, wonder_list))
         print(f"\nwrote {OUT}")
 

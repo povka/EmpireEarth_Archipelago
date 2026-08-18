@@ -173,13 +173,31 @@ try:
 except ImportError:  # loaded as a top-level module by tools/
     from Technologies import TECHNOLOGIES
 
+try:
+    from .TechUnlocks import TECH_REQUIRES
+except ImportError:  # loaded as a top-level module by tools/
+    from TechUnlocks import TECH_REQUIRES
+
 # One item per technology, carrying the benefit researching it would have
 # given. Researching sends the check and is deliberately left with no effect,
 # so this is where the benefit comes from.
 #
-# `useful`, not `progression` — no rule asks for one. A technology makes your
-# citizens quicker or your priests tougher; none is the difference between a
-# check being reachable and not.
+# All 100 are `useful`. A technology makes your citizens quicker or your priests
+# tougher; none of it decides whether a check is reachable.
+#
+# The 72 that open another technology's button were progression until the
+# client learned to open a chain itself (`TechChains`). A rule that names an
+# item forces that item to be progression — the reachability sweep collects
+# nothing else — so while `set_rules` asked for `Tech: <predecessor>`, no
+# research check could hold an epoch or a wonder without the technology below
+# it becoming load-bearing as well.
+#
+# Both halves are load-bearing, so don't move one without the other. Withhold
+# the unlock again and these rules come back and so does the classification;
+# make them useful while a rule still names them and every chained technology
+# is unreachable, which is worse than it sounds because the frozen generator
+# is built with cx_Freeze `optimize: 1` and the accessibility check that
+# catches it sits behind `if __debug__`. It ships the seed and logs a warning.
 TECH_ITEM_BASE = 400
 _TECHS_ORDERED = tuple(sorted(TECHNOLOGIES))
 

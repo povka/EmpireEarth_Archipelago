@@ -1,8 +1,21 @@
-"""Stop Empire Earth retiring units when you advance an epoch.
+"""Close the gaps where a build menu shows nothing at all.
 
-A unit is withdrawn once a later tier replaces it. A Rock Thrower leaves the
-Barracks the moment you leave the Copper Age, and a per-unit check you can miss
-that way is one that strands the run.
+This used to stop the game retiring units entirely, on the theory that a unit
+you can always recruit is a check you can never miss. That was wrong, and the
+reason is worth keeping: a menu is a fixed row of positions, one per line,
+showing the single unit of that line valid right now. Hold every unit open and
+each position stays pinned to its first tier — a run reached the Imperial Age
+with the Rock Thrower still in Barracks slot 1 and no way to build a Musketeer,
+and the Airport and Tank Factory never appeared because the Archery Range and
+Stable never vacated their positions in the build menu.
+
+So units retire as they always did, and their checks travel with the slot
+instead; see UnitSlots.py and Locations.LOCATION_ALSO_SENDS. What is left here
+is the handful of positions that sit *empty* for an epoch or two between one
+occupant and the next, which is a different problem — a check that closes and
+reopens later. Archipelago rules are monotone and cannot say "reachable until
+epoch 6", so generation puts progression on a check that has already shut. Those
+gaps get held open until their successor arrives.
 
 `EETechTreeNode` vtable[2] at `0x005CF742` decides it:
 
@@ -20,12 +33,11 @@ Two fields, two different things:
     +0x18   an expiry: "not offered after epoch N"
     +0x05   a replacement: "this specific later unit took over"
 
-Only `+0x18` gets written. That's deliberate — clearing `+0x05` doesn't keep the
-old unit beside its successor, it cancels the upgrade. Upgrade a Slinger to a
-Simple Bowman, advance once more, and the Archery Range is offering Slingers
-again with the Simple Bowman's own check now unsendable. Units get replaced as
-the game intends and the replacement carries the replaced check instead, in
-`Locations.LOCATION_ALSO_SENDS`.
+Only `+0x18` gets written, and only for the handful of gaps below. `+0x05` is
+never touched — clearing it doesn't keep the old unit beside its successor, it
+cancels the upgrade. Upgrade a Slinger to a Simple Bowman, advance once more,
+and the Archery Range is offering Slingers again with the Simple Bowman's own
+check now unsendable.
 
 Technologies are skipped entirely, which took a second stranded run to work
 out. A technology chain can share one button and be separated only by epoch —
@@ -35,13 +47,9 @@ forever, the slot never advances and the later tiers never appear. That killed
 a two-player run with `Epoch: Industrial Age` sitting on the Middle Ages
 upgrade.
 
-So `_scan` drops any node whose icon belongs to a technology. Everything else
-still needs no name: only 43 of 178 units can be tied to a node at all, which
-is why this writes to nodes rather than to a list of units.
-
-Buildings come along for free. The three carrying an expiry (`but_archery`,
-`but_stable`, `but_tower`) each have a second node without one, so they were
-never going to disappear anyway.
+So `_scan` drops any node whose icon belongs to a technology, and what it
+keeps is matched against the gap tables by icon — a node carries no name, and
+its button is the only handle these structures offer.
 """
 
 from __future__ import annotations
@@ -61,7 +69,7 @@ NEVER = 15                   # what a unit that never expires already holds
 
 
 class Obsolescence:
-    """Holds every node on the local player's tree permanently available."""
+    """Holds open the menu positions that would otherwise sit empty."""
 
     def __init__(self, proc, epochs, roster):
         self.proc = proc
@@ -133,41 +141,86 @@ class Obsolescence:
                 found.append(base + off)
         return found
 
+    # Icon -> the epoch it should stay buildable through.
+    #
+    # The only *building* with a gap. The Archery Range holds build-menu
+    # position 7 until epoch 6 and the Airport does not take it until epoch 9,
+    # so for two epochs neither exists and `Build Archery Range` cannot be sent
+    # by anything. That cost a run: `Epoch: Industrial Age` sat on a check that
+    # had already closed, and it stopped in the Imperial Age.
+    #
+    # Holding it to epoch 8 closes the gap and hands over exactly when the
+    # Airport arrives. Every other building's successor is waiting in the same
+    # epoch. The unit gaps come from `UnitSlots.SLOT_GAPS`; see `_gaps`.
+    GAPS = {"but_archery": 8}
+
+    def _gaps(self) -> dict[str, int]:
+        """Icon -> the epoch it stays buildable through.
+
+        The building above, plus every unit whose menu position sits empty for
+        a while before the next line takes it — `UnitSlots.SLOT_GAPS`, derived
+        from the observed listings in tools/data. Those name units, and a node
+        carries no name, so `UnitIcons` bridges the two. It is the one thing
+        here that has to come from a running game.
+
+        An epoch of 15 there means nothing ever takes the position. Those are
+        the ones worth holding: the position is free for the rest of the game,
+        so nothing can be squatted, and without the hold the check is gone for
+        good. The AP tank line ends at the Leopard and cost a seed that way.
+        """
+        out = dict(self.GAPS)
+        try:
+            try:
+                from .UnitSlots import SLOT_GAPS
+                from .UnitIcons import UNIT_ICONS
+            except ImportError:      # loaded as a top-level module by tools/
+                from UnitSlots import SLOT_GAPS
+                from UnitIcons import UNIT_ICONS
+        except ImportError:
+            return out               # no icon map generated yet
+        for db, epoch in SLOT_GAPS.items():
+            icon = UNIT_ICONS.get(db)
+            if icon:
+                out[icon] = epoch
+        return out
+
     def apply(self) -> int:
-        """Clear the expiry on every node, leaving replacements alone.
+        """Close the one gap in the menus, and nothing else.
 
-        Returns how many nodes were changed *by this call* - zero when the
-        epoch has not moved since the last one.
+        This used to clear the expiry on every node so a unit stayed
+        recruitable all match. That is not something the game can express: a
+        menu is a fixed row of positions showing the one unit of each line
+        valid now, so holding everything open pinned every position to its
+        first tier — the Rock Thrower sat in Barracks slot 1 into the Imperial
+        Age and the Musketeer never appeared, and the Airport and Tank Factory
+        never appeared either.
 
-        Redone whenever the epoch changes, not just once per match. The engine
-        sets these as you cross an epoch, so writing once at match start would
-        only postpone the problem to the next advance.
-
-        The node addresses are swept once and reused, so a re-apply is a few
-        hundred small writes rather than another pass over the heap.
+        Checks travel with the slot instead (see UnitSlots.py and
+        Locations.LOCATION_ALSO_SENDS). All that is left to write is GAPS.
         """
         tree = self.epochs.tech_tree()
         if not tree:
             return 0
-        epoch = self.epochs.reached()
-        if tree == self._tree and epoch == self._epoch:
-            # Nothing done this call. Returning the previous count instead made
-            # the caller log the same line every poll.
-            return 0
         if tree != self._tree:
             self._nodes = self._scan(tree)
+            self._tree = tree
+        try:
+            from .BuildingGate import node_stem
+        except ImportError:          # loaded as a top-level module by tools/
+            from BuildingGate import node_stem
 
+        gaps = self._gaps()
         changed = 0
         for addr in self._nodes:
-            expires = self.proc.read_i32(addr + NODE_OBSOLETE_AFTER)
-            if expires is None or expires >= NEVER:
+            stem = node_stem(self.proc, self.roster, addr, tree)
+            want = gaps.get(stem)
+            if want is None:
                 continue
-            # `+0x05` is deliberately not touched; see the module docstring.
+            if self.proc.read_i32(addr + NODE_OBSOLETE_AFTER) == want:
+                continue
             if self.proc.write(addr + NODE_OBSOLETE_AFTER,
-                               struct.pack("<i", NEVER)):
+                               struct.pack("<i", want)):
                 changed += 1
-
-        self._tree = tree
-        self._epoch = epoch
         self._written = changed
         return changed
+

@@ -223,7 +223,7 @@ def main():
         "))",
         "",
     ]
-    with open(OUT, "w", newline="\n") as f:
+    with open(OUT, "w", newline="\n", encoding="utf-8") as f:
         f.write("\n".join(lines))
     print(f"\nwrote {OUT}")
 

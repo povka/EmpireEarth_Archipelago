@@ -18,24 +18,6 @@ class BundleSize(Range):
     default = 3500
 
 
-class ApplyInGameWin(DefaultOnToggle):
-    """
-    End the match as a win when you complete the Archipelago goal.
-
-    The client holds the game's victory conditions off so a match can never end
-    on its own, which would otherwise leave a finished seed running as if
-    nothing had happened. With this on, completing the goal makes Empire Earth
-    end the match the way it would after any other victory.
-
-    It works by briefly detouring one function so the game calls its own
-    end-of-match code on its own thread. That is the only place this world
-    writes to the game's code, it undoes itself the moment it fires, and nothing
-    on disk is touched. Turn it off to stay in the match after finishing.
-    """
-
-    display_name = "Apply In-Game Win"
-
-
 class InGameMessages(DefaultOnToggle):
     """
     Show Archipelago messages on Empire Earth's own message line.
@@ -89,7 +71,7 @@ class MapTerrain(Choice):
     you have to tell it. Pick the wrong one and checks in the seed may be
     impossible to send, which can strand a run.
 
-    `land_and_water` is the ordinary case. Docks and Navy Yards exist, and so
+    `land_and_water` is the ordinary case. Docks and Naval Yards exist, and so
     does everything they build — frigates, transports, battleships, galleys,
     submarines and carriers.
 
@@ -98,7 +80,7 @@ class MapTerrain(Choice):
     seed.
 
     `space` is a Planets map. It substitutes rather than adds: a Space Dock
-    stands where the Dock would be, a Space Turret where the Navy Yard would,
+    stands where the Dock would be, a Space Turret where the Naval Yard would,
     and an Orbital Space Station where the Pharos Lighthouse would. The ships
     are gone and the Space Dock's own craft take their place.
 
@@ -164,32 +146,50 @@ class BuildingUnlocks(DefaultOnToggle):
     Capitol is never locked: every match starts with one, and it is what makes
     citizens. The Farm is not locked either — it has no build-menu entry the
     client can hold shut.
+
+    Wonders have their own option. Turning this off and leaving `wonder_unlocks`
+    on leaves `Epoch:` and `Wonder:` as the only progression items in the seed,
+    because a `Building:` item is the only other thing any rule asks for.
     """
 
     display_name = "Building Unlocks"
+
+
+class WonderUnlocks(DefaultOnToggle):
+    """
+    Put wonders behind Archipelago items.
+
+    A wonder you have not found the `Wonder: <name>` item for is missing from
+    your build menu, exactly as a locked building is. This was part of
+    `building_unlocks` and is its own option because the two do different jobs:
+    a locked building shapes the whole run, while a locked wonder is the reward
+    for finding it.
+
+    Under a wonder goal that matters more, because the wonder *is* the goal —
+    the item is what you were looking for and raising it is what you do with it,
+    rather than the same wonder paying out twice.
+
+    Building a wonder never sends a check either way.
+    """
+
+    display_name = "Wonder Unlocks"
 
 
 class Goal(Choice):
     """
     What completes the seed.
 
-    `reach_epoch` requires wonders_for_victory to be 0, and the wonder options
-    require it to be 1 or more. That pairing is deliberate: Empire Earth ends
+    `reach_epoch` requires wonders_for_victory to be 0, and `wonder_victory`
+    requires it to be 1 or more. That pairing is deliberate — Empire Earth ends
     the match the moment a wonder victory is achieved, so a seed that allows one
     without Archipelago recognising it could be cut short with the goal
     unreachable.
-
-    `either` completes on whichever you manage first. It is the most forgiving,
-    but it also means the seed is logically beatable as soon as wonders are, so
-    epoch unlocks stop being required to finish — they are still needed to reach
-    everything else.
     """
 
     display_name = "Goal"
     option_reach_epoch = 0
     option_wonder_victory = 1
-    option_either = 2
-    default = 0
+    default = 1
 
 
 class StartingEpoch(Choice):
@@ -309,7 +309,7 @@ class UnitLimit(Range):
     display_name = "Game Unit Limit"
     range_start = 50
     range_end = 1200
-    default = 300
+    default = 1200
 
 
 class WondersToWin(Range):
@@ -317,18 +317,21 @@ class WondersToWin(Range):
     Wonders needed for a wonder victory. 0 turns wonder victory off.
 
     This is the game's own victory condition and the Archipelago one at the
-    same time, so it has to agree with `goal`: 0 for `reach_epoch`, 1 or more
-    for `wonder_victory` and `either`.
+    same time, so it has to agree with `goal` — 0 for `reach_epoch`, 1 or more
+    for `wonder_victory`.
 
-    When it is above 0, each wonder you build is also a check. Six of the seven
-    are available from the Stone Age; the Time Machine needs the Space Age, so
-    it is only a check in a seed whose goal epoch reaches it.
+    Building a wonder sends no check. The count is what finishes the seed, and
+    wonders count when construction finishes rather than when the foundation
+    goes down.
     """
 
     display_name = "Wonders For Victory"
     range_start = 0
     range_end = 6
-    default = 0
+    # Not 0, because the default goal is `wonder_victory` and that refuses a 0.
+    # One wonder is the shortest honest version of the goal; raise it for a
+    # longer run.
+    default = 6
 
 
 class RevealMap(Toggle):
@@ -361,6 +364,7 @@ class EmpireEarthOptions(PerGameCommonOptions):
     starting_epoch: StartingEpoch
     goal_epoch: GoalEpoch
     building_unlocks: BuildingUnlocks
+    wonder_unlocks: WonderUnlocks
     technology_checks: TechnologyChecks
     map_size: MapSize
     resources: ResourceLevel
@@ -377,5 +381,4 @@ class EmpireEarthOptions(PerGameCommonOptions):
     opponents: Opponents
     map_terrain: MapTerrain
     ingame_messages: InGameMessages
-    apply_ingame_win: ApplyInGameWin
     bundle_size: BundleSize

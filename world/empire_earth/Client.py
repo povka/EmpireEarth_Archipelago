@@ -38,6 +38,7 @@ from .Epochs import EPOCH_NAMES, EpochAccess
 from .BuildingGate import BuildingGate
 from .Research import ResearchWatch
 from .Obsolescence import Obsolescence
+from .TechChains import TechChains
 from .TechEffects import TechEffects
 from .Items import (
     ITEM_ID_TO_BUILDING,
@@ -116,11 +117,12 @@ class EmpireEarthCommandProcessor(ClientCommandProcessor):
         if not ctx.roster:
             self.output("Not attached / no memory profile.")
             return
-        counts = ctx.roster.counts()
+        # Deep, so `/roster` shows a hero. The array walk never lists one.
+        counts = ctx.roster.counts(deep=True)
         if not counts:
             self.output("Nothing owned - are you in a match?")
             return
-        _owned, finished = ctx.roster.survey()
+        _owned, finished = ctx.roster.survey(deep=True)
         for name, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])):
             loc = ctx.location_for(name) or "(not a check)"
             # A type with nothing finished is still a building site, so its
@@ -141,7 +143,7 @@ class EmpireEarthCommandProcessor(ClientCommandProcessor):
         if not ctx.roster:
             self.output("Not attached / no memory profile.")
             return
-        owned, finished = ctx.roster.survey()
+        owned, finished = ctx.roster.survey(deep=True)
         for db_name, display in sorted(WONDER_BY_DBNAME.items()):
             if db_name in finished:
                 have = "built"
@@ -232,6 +234,7 @@ class EmpireEarthContext(CommonContext):
         # Research is state too. The whole researched set is read each poll
         # and compared against what has already been sent.
         self.research: ResearchWatch | None = None
+        self.tech_chains: TechChains | None = None
         # Units are held permanently recruitable, so a per-unit check can't
         # expire when an epoch passes.
         self.obsolescence: Obsolescence | None = None
@@ -265,6 +268,10 @@ class EmpireEarthContext(CommonContext):
         self.wonders_needed = 0
         self.wonders_built = 0
         self.in_match = False
+        # What the current match instance is built out of; see match_key.
+        self.match_key_seen: tuple[int, int] | None = None
+        # Counts polls so the heap sweep runs on its own cadence.
+        self.roster_polls = 0
         self.match_gone = 0
         self.defeat_reported = False
         self.settings_checked = False
@@ -274,7 +281,6 @@ class EmpireEarthContext(CommonContext):
         self.banner: Banner | None = None
         self.win_hook: WinHook | None = None
         self.ingame_messages = True
-        self.apply_ingame_win = True
         self.opponents = "allied"
         self.peace_announced = False
         self.desired_settings: dict[str, int] = {}
@@ -313,9 +319,6 @@ class EmpireEarthContext(CommonContext):
             self.defeat_reported = False
             self.ingame_messages = bool(
                 slot_data.get("ingame_messages", True)
-            )
-            self.apply_ingame_win = bool(
-                slot_data.get("apply_ingame_win", True)
             )
             self.opponents = str(
                 slot_data.get("opponents")
@@ -414,7 +417,7 @@ class EmpireEarthContext(CommonContext):
         armed flag covers the frame or two between arming the hook and the game
         recording an outcome, which a poll can land right in the middle of.
         """
-        if not self.apply_ingame_win or not self.win_hook:
+        if not self.win_hook:
             return
         if self.win_armed or self.match_decided():
             return
@@ -541,6 +544,7 @@ class EmpireEarthContext(CommonContext):
             self.gate = BuildingGate(proc, self.roster, self.epochs)
             self.research = ResearchWatch(proc, self.roster, self.epochs)
             self.obsolescence = Obsolescence(proc, self.epochs, self.roster)
+            self.tech_chains = TechChains(proc, self.epochs, self.research)
             self.tech_effects = TechEffects(proc, prof)
             self.settings_forced = False
             self.peace_announced = False
@@ -677,6 +681,26 @@ class EmpireEarthContext(CommonContext):
             new.append(loc_id)
         if new:
             await self.check_locations(new)
+
+    def sync_tech_chains(self):
+        """Open the next tier of every chain whose predecessor is researched.
+
+        The other half of holding a technology's benefit back. Suppressing the
+        effect also suppressed the unlock it carried, so a chained technology
+        stayed unavailable until its `Tech:` item arrived — which made those
+        items gate checks, and a gating item has to be progression. Putting the
+        unlock back by hand is what lets an epoch or a wonder sit on a research
+        check without the technology below it being load-bearing.
+
+        Only with `technology_checks` on. Nothing is suppressed without it, so
+        the game opens its own chains.
+        """
+        if not (self.tech_checks and self.tech_chains):
+            return
+        try:
+            self.tech_chains.apply()
+        except Exception:
+            return          # between matches, or the tree is not resolvable
 
     def sync_tech_effects(self):
         """Withhold researched benefits, and apply the ones items have sent.
@@ -915,12 +939,24 @@ class EmpireEarthContext(CommonContext):
         found = self.locations_for(db_name)
         return found[0] if found else None
 
+    # Polls between heap sweeps. Ten seconds at the current rate — a check is
+    # one-shot and nothing races it, so the delay costs nothing, while sweeping
+    # every poll would spend two thirds of every half second on it.
+    DEEP_SWEEP_POLLS = 20
+
     async def sync_roster(self):
-        """Send a check the first time the player owns a curated type."""
+        """Send a check the first time the player owns a curated type.
+
+        Mostly the roster array, which is cheap. Every so often the heap
+        instead, because the array leaves things out — a hero is never in it,
+        which is why one has never sent its check. See Roster.units_deep.
+        """
         if not self.roster:
             return
+        self.roster_polls += 1
+        deep = self.roster_polls % self.DEEP_SWEEP_POLLS == 1
         try:
-            owned, finished = self.roster.survey()
+            owned, finished = self.roster.survey(deep=deep)
         except Exception:
             return
         if not owned:
@@ -1013,6 +1049,7 @@ class EmpireEarthContext(CommonContext):
 
         self.in_match = False
         self.match_gone = 0
+        self.match_key_seen = None
         sent = len(self.checked_locations)
         total = sent + len(self.missing_locations)
         logger.info(
@@ -1045,6 +1082,73 @@ class EmpireEarthContext(CommonContext):
         self.research_announced = False
         # A new match can be won on its own terms.
         self.win_armed = False
+
+    def match_key(self) -> tuple[int, int] | None:
+        """What the current match instance is built out of.
+
+        The player object and the tech tree, both of which the engine throws
+        away and builds again whenever the match is replaced. Neither pointer
+        is reliable alone — the allocator reuses blocks — but both landing on
+        their old addresses at once is another matter.
+        """
+        if not (self.res and self.epochs):
+            return None
+        player = self.res.player_object()
+        tree = self.epochs.tech_tree()
+        if not player or not tree:
+            return None
+        return (player, tree)
+
+    def check_match_reload(self):
+        """Notice the game rebuilding a match without the roster going quiet.
+
+        Loading a save tears the match down and builds it again — new player
+        objects, a new tech tree, every node at a new address — but it never
+        leaves the roster empty for the three seconds `track_match_state`
+        waits on, so the match-end path never runs. The caches then outlive
+        the tree they were swept from and start writing to addresses that hold
+        something else, which is how `Research Monotheism` lost its button.
+
+        The node caches also check their own addresses before using them, so
+        nothing here is load-bearing for correctness. What this adds is
+        noticing at the transition rather than one poll into the damage, and
+        keeping the technology bookkeeping straight across it.
+        """
+        key = self.match_key()
+        if key is None:
+            return
+        if self.match_key_seen is None:
+            self.match_key_seen = key
+            return
+        if key == self.match_key_seen:
+            return
+
+        self.match_key_seen = key
+        if not self.in_match:
+            return          # a normal match change; track_match_state has it
+
+        logger.info("The match was rebuilt - a loaded save, most likely.")
+        # Every cached node address belonged to the tree that just went away.
+        if self.gate:
+            self.gate.forget()
+        if self.research:
+            self.research.forget()
+        if self.obsolescence:
+            self.obsolescence.forget()
+        # Epoch detection reads the new tree from scratch.
+        self.last_reached = -1
+        self.permanence_reported = False
+        self.gate_announced = False
+        self.research_announced = False
+        # Carry the granted set onto the new tree rather than letting the
+        # re-key wipe it. A save holds the stats the effects produced, so
+        # everything granted before it was written is still applied — granting
+        # again would hand out every bonus twice. This is the one path that
+        # can tell a reload from a fresh match, which is why it does the
+        # carrying: arriving through the menu looks like a new match from here
+        # and still re-grants.
+        self.granted_key = key[1]
+        self._save_applied()
 
     def enforce_peace(self):
         """Hold every computer player at peace with us.
@@ -1097,11 +1201,20 @@ class EmpireEarthContext(CommonContext):
 
     # --- goal -------------------------------------------------------------
 
+    # `either` was a goal until it was removed, and a seed rolled while it
+    # existed still reports it. It meant both conditions, so it is read that way
+    # rather than matching nothing and leaving that seed unable to finish.
+    def wants_epoch_goal(self) -> bool:
+        return self.goal_kind in ("reach_epoch", "either")
+
+    def wants_wonder_goal(self) -> bool:
+        return self.goal_kind in ("wonder_victory", "either")
+
     def goal_description(self) -> str:
         parts = []
-        if self.goal_kind in ("reach_epoch", "either"):
+        if self.wants_epoch_goal():
             parts.append(f"reach {EPOCH_NAMES[self.goal_epoch]}")
-        if self.goal_kind in ("wonder_victory", "either"):
+        if self.wants_wonder_goal():
             n = self.wonders_needed
             parts.append(f"build {n} wonder{'s' if n != 1 else ''}")
         return " or ".join(parts) if parts else "unknown"
@@ -1111,7 +1224,7 @@ class EmpireEarthContext(CommonContext):
         if self.finished_game:
             return
 
-        if self.goal_kind in ("reach_epoch", "either") and self.epochs:
+        if self.wants_epoch_goal() and self.epochs:
             reached = self.epochs.reached()
             if reached is not None and reached >= self.goal_epoch:
                 self.notify(
@@ -1120,7 +1233,7 @@ class EmpireEarthContext(CommonContext):
                 await self.declare_goal()
                 return
 
-        if self.goal_kind in ("wonder_victory", "either"):
+        if self.wants_wonder_goal():
             if self.wonders_needed and self.wonders_built >= self.wonders_needed:
                 self.notify(
                     f"Goal complete: {self.wonders_built} wonders!", "item"
@@ -1135,7 +1248,11 @@ async def game_watcher(ctx: EmpireEarthContext):
             if ctx.ensure_attached():
                 warned = False
                 if ctx.server and ctx.slot is not None:
-                    # First, so a setup screen still gets corrected when
+                    # Before anything reads or writes the tech tree, so a
+                    # match that was rebuilt since the last poll is noticed
+                    # while every cache still describes the old one.
+                    ctx.check_match_reload()
+                    # Early, so a setup screen still gets corrected when
                     # something further down fails this poll.
                     ctx.enforce_match_settings()
                     await ctx.apply_pending_items()
@@ -1144,6 +1261,7 @@ async def game_watcher(ctx: EmpireEarthContext):
                     ctx.sync_buildings()
                     await ctx.sync_research()
                     ctx.sync_tech_effects()
+                    ctx.sync_tech_chains()
                     # Driven from here rather than from sync_epochs, which
                     # returns early once the epoch stops changing and would
                     # stop these running at all.

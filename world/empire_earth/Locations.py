@@ -8,8 +8,10 @@ try:
     from .BuildingEpochs import BUILDING_EPOCH
     from .Producers import UNIT_FAMILY_PRODUCERS
     from .Upgrades import UNIT_SUPERSEDES
+    from .UnitSlots import SLOT_FIRST_EPOCH, SLOT_PREDECESSORS, UNIT_SLOTS
     from .Objects import (
         BUILDING_MIN_EPOCH,
+        BUILDING_TIERS,
         BUILDINGS,
         UNIT_FAMILIES,
         UNIT_FAMILY_BY_NAME,
@@ -23,8 +25,10 @@ except ImportError:  # loaded as a top-level module by tools/
     from BuildingEpochs import BUILDING_EPOCH
     from Producers import UNIT_FAMILY_PRODUCERS
     from Upgrades import UNIT_SUPERSEDES
+    from UnitSlots import SLOT_FIRST_EPOCH, SLOT_PREDECESSORS, UNIT_SLOTS
     from Objects import (
         BUILDING_MIN_EPOCH,
+        BUILDING_TIERS,
         BUILDINGS,
         UNIT_FAMILIES,
         UNIT_FAMILY_BY_NAME,
@@ -125,13 +129,17 @@ TECH_LOCATIONS: dict[str, int] = {
 # One check per unit.
 #
 # These would be missable — Empire Earth withdraws a unit once a later tier
-# replaces it — which is why they were family checks once. The engine retires a
-# unit two ways, so two things keep them sendable:
+# replaces it — which is why they were family checks once. Units retire exactly
+# as the game intends now, and the check travels rather than the unit:
 #
-# - an *expiry* ("not offered after epoch N") is cleared by Obsolescence.py, so
-#   a Rock Thrower stays recruitable all match
-# - a *replacement* ("this later unit took over") is left alone, and the
-#   replacement sends the replaced unit's check. See LOCATION_ALSO_SENDS
+# - an *upgrade* is carried by the tier above it, so a Long Bow sends every
+#   archer below it
+# - a *menu position* is carried by whatever takes it next, which is not the
+#   same relation — Barracks slot 4 runs Sampson, Viking, Hand Cannoneer,
+#   Trench Mortar, Heavy Mortar, and no upgrade connects any of them
+#
+# Both live in LOCATION_ALSO_SENDS. Obsolescence.py only holds open the
+# positions that would otherwise sit empty between occupants.
 #
 # `x`-prefixed records are campaign and scenario props.
 EXCLUDED_UNIT_PREFIXES = ("x",)
@@ -154,6 +162,52 @@ EXCLUDED_UNIT_NAMES = frozenset({
     # marker for its other scenario records — and it sits in the Aircraft
     # Carrier family beside the Enterprise, indistinguishable by any field.
     "s11 Japanese Flattop Carrier",
+    # Same shape, and this one the game's own assets settle. `Emissary` shares
+    # the `Priest` family with the Priest and carries no `x ` prefix, but
+    # neither `data.ssa` holds a texture matching `emissar` — while the Priest
+    # has four button icons and the Prophet three. No icon, no build button,
+    # no way to recruit one. It cost a run: `Epoch: Dark Age` sat on
+    # `Recruit Emissary`, in a match with a Temple that only ever offered
+    # Priests and Prophets.
+    "Emissary",
+    # Reported from play, all scenario-only or absent. The Scorpion and the LST
+    # Transport have no `x ` prefix and sit in ordinary families; the SAS
+    # Explosive Expert has an icon (`but_sasexplosives_11t`) and still appears
+    # in no build menu. `Field Medic 13` is the odd one out — it exists and is
+    # buildable, and it is the Digital medic under a second name, so keeping
+    # both put one unit in a menu position twice.
+    "Gun Spear04 Scorpion",
+    "Inf10 - SAS Explosive Expert",
+    "Inf10 - Radio Man",
+    "a Strafe Fighter11 Zero",
+    "Field Medic 13",
+    "s11 LST Transport",
+    # Both Catapult Ships. Scenario-only, reported from play — and the menu
+    # listings agree: neither appears in any of the Dock's fourteen rows in
+    # tools/data/remaining_slots.tsv, while every other warship of their epochs
+    # does. A unit no menu ever draws is a check nobody can send.
+    "s04 Bronze Catapult Ship",
+    "s06 Middle Age Catapult Ship",
+    # `Hovercraft 1` is in the database and in no menu — not the Dock's
+    # fourteen rows, not the Naval Yard's six. A seed put the goal behind it.
+    "Hovercraft 1",
+    # Scenario-only, reported from play. The database name is a bare
+    # `a Catalina` with no tier and no `x ` prefix, so nothing marks it out.
+    "a Catalina",
+    # Carrier aircraft. They come from an aircraft carrier rather than a
+    # building, so they appear in no build menu this project models and the
+    # producer table can only guess at an Airport they never use.
+    "a Carrier Fighter11 Dauntless",
+    "a Carrier Fighter11 Zero",
+    "a CarrierFighter11 Corsair1",
+    "a CarrierFighter12 F-14",
+    "a CarrierFighter13 Avenger",
+    # Japan's alone, with no equivalent for anyone else — unlike the
+    # `(Crusader)` units, which have a plain twin their civilisation fields
+    # instead. A check only one civilisation can ever send is one most runs
+    # cannot, so it stops being a check rather than sitting there as a dead
+    # entry.
+    "Inf15 - Cyber Ninja",
 })
 
 
@@ -200,6 +254,148 @@ UNIT_DISPLAY_OVERRIDES: dict[str, str] = {
     # The tidy-up only strips a leading tier number, and this name has none, so
     # the check read `Recruit spc Spy Satellite`.
     "spc Spy Satellite": "Spy Satellite",
+    # The database runs the two words together and nothing else does — the
+    # game's own screen, the wiki and the rest of the sword line all say
+    # "Long Sword".
+    "Inf06 - LongSword": "Long Sword",
+    "Inf06 - LongSword(Crusader)": "Long Sword (Crusader)",
+    # Eight names below are chosen over the screen's, on purpose, so don't
+    # "correct" them against tools/data: `Bazooka`, `Crossbow`,
+    # `Medic - Imperial`, `Field Medic - Digital`, `P51 Fighter`,
+    # `Battleship Bismarck`, `Cruiser - Dardo`, `Cruiser - Sagittarian`.
+    #
+    # The rest are the game's own screen names, read off a vanilla build menu.
+    # The database is inconsistent about ships in particular — `s03 Copper
+    # Frigate`, `s07 Renaissance Battleship [Galleon]`, `s10 Cruiser` — while
+    # every one of them is drawn as `Frigate - Copper`, `Battleship -
+    # Renaissance`, `Cruiser - Dardo`. Matching the screen is what makes a hint
+    # findable.
+    's02 Fishing Boat Stone': 'Fishing Raft',
+    's04 Fishing Boat Bronze': 'Fishing Boat - Bronze',
+    's02 Stone Transport': 'Transport Raft',
+    's03 Copper Transport': 'Transport - Copper',
+    's04 Bronze Transport': 'Transport - Bronze',
+    's03 Copper Battleship [Galley]': 'Battleship - Copper',
+    's04 Bronze Battleship [Pentakonter]': 'Battleship - Bronze',
+    's05 Byzantine Battleship [Septrireme]': 'Battleship - Byzantine',
+    's02 Stone Frigate [War Raft]': 'War Raft',
+    's03 Copper Frigate': 'Frigate - Copper',
+    's04 Bronze Frigate': 'Frigate - Bronze',
+    's05 Byzantine Frigate': 'Frigate - Byzantine',
+    's03 Copper Galley': 'Galley - Copper',
+    's04 Bronze Galley': 'Galley - Bronze',
+    's05 Byzantine Galley': 'Galley - Byzantine',
+    'Gun Spear06 Balistae': 'Ballista',
+    'Siege06 - Heavy Tower': 'Heavy Siege Tower',
+    's06 Middle Ages Battleship [Decereme]': 'Battleship - Middle Ages',
+    's06 Middle Age Frigate': 'Frigate - Middle Ages',
+    's06 Middle Age Galley': 'Galley - Middle Ages',
+    'Arch05 - Cross Bow': 'Crossbow',
+    'Gun Cannon07 - Culverin Cannon': 'Culverin',
+    'Gun Siege07 Basilisk Cannon': 'Basilisk',
+    's07 Renaissance Battleship [Galleon]': 'Battleship - Renaissance',
+    's07 Renaissance Galleon': 'Galleon - Renaissance',
+    's08 Fishing Boat Imperial': 'Fishing Boat - Imperial',
+    's08 Imperial Transport': 'Transport - Imperial',
+    's08 Imperial Battleship': 'Battleship - Imperial',
+    's08 Imperial Frigate': 'Frigate - Imperial',
+    's08 Imperial Galleon': 'Galleon - Imperial',
+    's08 Gunboat Cruiser': 'Cruiser - Gunboat',
+    'h1-9 Otto Von Bismarck (heal)': 'Otto von Bismarck',
+    'Gun Siege09 Serpentine Cannon': 'Serpentine',
+    's09 Royal Battleship': 'Battleship - Royal',
+    's09 Royal Frigate': 'Frigate - Royal',
+    's09 Royal Galleon': 'Galleon - Royal',
+    's10 Atomic Age Transport': 'Transport - Atomic',
+    's10 Dreadnought Battleship': 'Battleship - Dreadnought',
+    's10 Good Hope Frigate': 'Frigate - Good Hope',
+    's10 Cruiser': 'Cruiser - Dardo',
+    'a Strafe Fighter10 Fokker DR.1': 'Fokker Fighter/Bomber',
+    'a Fighter10 Sopwith Camel F.1': 'Sopwith Fighter',
+    'a Bomber 10 Gotha': 'Gotha Bomber',
+    'h1-11 Rommel (heal)': 'Erwin Rommel',
+    's11 Fishing Boat Modern': 'Fishing Boat - Trawler',
+    's11 Bismarck Battleship': 'Battleship Bismarck',
+    's11 Warrington': 'Frigate - Warrington',
+    'a Strafe Fighter11 ME109': 'ME109 Fighter/Bomber',
+    'a Strafe Fighter11 ME262': 'ME262 Fighter/Bomber',
+    'a Fighter11 Spitfire': 'Spitfire Fighter',
+    'a Fighter11 P51': 'P51 Fighter',
+    'a Bomber 11 Heinkel 111': 'Heinkel Bomber',
+    'a Bomber 11 B-17': 'B-17 Bomber',
+    'a BomberNuc11 B-29': 'B-29 Bomber',
+    'a AT Fighter11 Typhoon': 'Typhoon Anti-Tank',
+    'Inf11 - Bazooka Infantry': 'Bazooka',
+    'Field Medic - Imperial': 'Medic - Imperial',
+    'Field Medic 11': 'Medic - Atomic',
+    'h1-12 R.W. Bresden (heal)': 'RW Bresden',
+    'Gun AT12 120mm At Gun': '120mm AT Gun',
+    'a Strafe Fighter12 Stealth Fighter': 'F-117 Fighter/Bomber',
+    'a Fighter12 F-15': 'F-15 Fighter',
+    'a Bomber 12 Stealth B-2': 'B-2 Bomber',
+    'a BomberNuc12 B-52': 'B-52 Bomber',
+    'a AT Fighter12 A-10': 'A-10 Anti-Tank',
+    'a Helicopter Sea King 12': 'Sea King',
+    'a HelicopterXprt12 Chinook Transport 12': 'Helicopter Transport',
+    'a Helicopter Apache Longbow 12': 'Helicopter Anti-Tank',
+    'a HelicopterGunShip12 Gun Ship': 'Helicopter Gunship',
+    'Gun Artillery13 Colossus': 'Colossus Artillery',
+    'Field Medic WWII': 'Field Medic - Digital',
+    'a Strafe Fighter13 Talon': 'Talon Fighter/Bomber',
+    'a Fighter13 F-48 Jackal': 'Jackal Fighter',
+    'a Bomber 13 B-122 Wyvern': 'B-122 Wyvern Bomber',
+    'a BomberNuc13 Titan': 'Titan Bomber',
+    'a HelicopterXprt13 Pegasus': 'Pegasus Transport',
+    'a HelicopterAT13 Spectre': 'Spectre AT Helicopter',
+    'a HelicopterGunShip13 Reaper': 'Reaper Gunship',
+    's13 Digital Fishing Boat': 'Fishing Boat - Digital',
+    's13 Leviathon Battleship': 'Battleship - Leviathan',
+    's13 Juggernaut Frigate': 'Frigate - Juggernaut',
+    's13 Sagitarian Cruiser': 'Cruiser - Sagittarian',
+    's13 Gargantua Transport': 'Transport - Gargantua',
+    'Tank10  Mk V': 'MkV Tank (HE)',
+    'Tank11 Sherman': 'Sherman Tank (HE)',
+    'Tank12  M1A1': 'M1 Tank (HE)',
+    'Tank13 Gladiator': 'Gladiator Tank',
+    '10 AA - Tank': 'Flak Halftrack',
+    '13 AA Tank Skywatcher': 'Skywatcher AA',
+    'Mech Apollo': 'Apollo',
+    'Mech Hyperion': 'Hyperion',
+    'Mech Furies': 'Furies',
+    'Mech Ares': 'Ares',
+    'Mech Tempest': 'Tempest',
+    'Mech Pandora': 'Pandora',
+    'Mech Minotaur': 'Minotaur',
+    's10 U Boat': 'Sub - U-Boat',
+    's12 Nautilus Submarine': 'Sub - Nautilus',
+    'Mech Ares II': 'Ares II',
+    'Mech Hades': 'Hades',
+    'Mech Hyperion II': 'Hyperion II',
+    'Mech Minotaur II': 'Minotaur II',
+    'Mech Pandora II': 'Pandora II',
+    'Mech Poseidon': 'Poseidon',
+    'Mech Zeus': 'Zeus',
+    'Siege04 - Tower': 'Siege Tower',
+    'Sp15 - Capital Ship': 'Space Capital Ship',
+    'Tank10 A7V': 'A7V Tank (AP)',
+    'Tank11 Panzer': 'Panzer Tank (AP)',
+    'Tank12 Leopard': 'Leopard Tank (AP)',
+    'Tank14 Centurion': 'Centurion Tank',
+    'a Fighter14 F-96 Nebula': 'Nebula Fighter',
+    'a Helicopter Sea King II 13': 'Sea King II',
+    'a Strafe Fighter14 Phoenix': 'Phoenix Fighter/Bomber',
+    'h1 - 15 Khan Sun Do (Strategist)': 'Khan Sun Do',
+    'h1-7 Isabella (heal)': 'Isabella of Castile',
+    'h2 - 15 Hu Kwan Do (Warrior)': 'Hu Kwan Do',
+    'h2-10 von Richtofen (Morale)': 'Manfred von Richthofen',
+    'h2-11 Shackelford (Morale)': 'Travis Shackelford',
+    'h2-12 St. Albans (Morale)': 'Dennis St. Albans',
+    's07 Renaissance Frigate': 'Frigate - Renaissance',
+    's11 Enterprise Aircraft Carrier': 'Carrier - Enterprise',
+    's12 Trident Submarine': 'Sub - Trident',
+    's13 Nexus Carrier': 'Carrier - Nexus',
+    's14 Hammerhead Submarine': 'Sub - Hammerhead',
+    's14 Triton Submarine': 'Sub - Triton',
 }
 
 
@@ -222,6 +418,17 @@ def _hero_parts(db_name: str):
         if match else None
 
 
+# `a Helicopter Sea King II 13` reads as a database row rather than a unit. The
+# leading `a ` marks an aircraft and the trailing number repeats the tier, and
+# neither belongs in something the player reads off a check.
+_AIR_PREFIX = re.compile(r"^a\s+")
+_TRAILING_TIER = re.compile(r"\s+\d+$")
+
+
+def _tidy_air(name: str) -> str:
+    return _TRAILING_TIER.sub("", _AIR_PREFIX.sub("", name)).strip()
+
+
 def _unit_display(db_name: str) -> str:
     """`Inf01 - Clubman` -> `Clubman`, keeping the full name when unsure."""
     override = UNIT_DISPLAY_OVERRIDES.get(db_name)
@@ -236,10 +443,12 @@ def _unit_display(db_name: str) -> str:
         return _HERO_ROLE.sub("", hero[2]).strip() or hero[2]
     match = _UNIT_PREFIX.match(db_name)
     tail = match.group(1).strip() if match else db_name
-    # Some names put the tier last (`a Helicopter Sea King II 13`), leaving a
-    # tail with no letters in it. Those keep their database name — ugly, but
-    # unique and honest.
-    return tail if any(c.isalpha() for c in tail) else db_name
+    if any(c.isalpha() for c in tail):
+        return tail
+    # Some names put the tier last (`a Helicopter Sea King II 13`), so the
+    # general rule strips the leading `a` and leaves a tail of digits. Drop the
+    # aircraft marker and the trailing tier from the whole name instead.
+    return _tidy_air(db_name) or db_name
 
 
 _UNIT_PREFIX = re.compile(r"^[A-Za-z ]*?\d+\s*(?:-\s*)?(.+)$")
@@ -306,6 +515,21 @@ BUILD_LOCATION_BY_DBNAME: dict[str, str] = {
     raw: f"Build {display}" for raw, display in _BUILDINGS_ORDERED
 }
 
+# Every tier of a defence line reports its own database name — a tower built in
+# the Prehistoric Age is `b  Guard Tower - Paleo`, and the Copper upgrade
+# renames what you already own to `b  Guard Tower - Copper`. The check is the
+# line, so every tier resolves to the base tier's check. Without this an
+# upgraded tower stops sending anything, and a run that upgraded before the
+# check went out could never send it at all.
+_BUILD_LOCATION_BY_BASE = {
+    raw: loc for raw, loc in BUILD_LOCATION_BY_DBNAME.items()
+}
+BUILD_LOCATION_BY_DBNAME.update({
+    tier: _BUILD_LOCATION_BY_BASE[base]
+    for tier, base in BUILDING_TIERS.items()
+    if base in _BUILD_LOCATION_BY_BASE
+})
+
 # Database name -> display name, for the client's wonder counting and its
 # `/wonders` display. Not a location lookup any more: nothing is sent for one.
 WONDER_BY_DBNAME: dict[str, str] = {
@@ -364,13 +588,63 @@ UNIT_PRODUCER_OVERRIDES: dict[str, tuple[str, ...]] = {
     # Trained at both, which no family can express — its family is Helicopter
     # and every other member is Airport-only. Missing the second wouldn't
     # strand a seed, since the Airport still reaches it, but it would tell
-    # logic a Navy Yard is no help when it is.
-    "a Helicopter Sea King II 13": ("Airport", "Navy Yard"),
+    # logic a Naval Yard is no help when it is.
+    "a Helicopter Sea King II 13": ("Airport", "Naval Yard"),
     # Two members of the `Space Fighter` family the Space Dock doesn't build,
     # reported from the game: the Airport's Space Age fighter, and a satellite
     # launched from the Capitol.
     "a Fighter15 Planetary Fighter": ("Airport",),
     "spc Spy Satellite": ("Capitol",),
+
+    # A Prophet comes from the Temple, and the database files it under `Human`
+    # beside the Rock Thrower and the Trench Mortar — so the family handed it a
+    # Barracks. `gen_producers.TEMPLE_UNITS` names it a Temple unit, but that
+    # label is per unit and `Producers.py` is emitted per family, so it was
+    # lost on the way out.
+    #
+    # It shipped a seed nobody could finish. `Building: Archery Range` sat on
+    # `Recruit Prophet`, which logic thought a Barracks reached in the Stone
+    # Age; the Temple that really trains one was behind `Recruit Trench
+    # Mortar` in the Atomic Age, and `Epoch: Copper Age` was on
+    # `Build Archery Range`. A run got as far as the Stone Age and stopped.
+    "Prophet": ("Temple",),
+
+    # The two balloons come from the Capitol, not the Airport. The database
+    # files them under `Helicopter` with the gunships and transports, so they
+    # inherited the Airport when `gen_producers` dropped the `Balloon` label
+    # from the shared Town Center/Capitol table — that fix was right for every
+    # helicopter and took the balloons' own producer with it.
+    #
+    # The menu listings settle it: both appear in the Capitol's rows at epochs
+    # 8 to 11 and in none of the Airport's. See tools/data/remaining_slots.tsv.
+    "a Balloon09 Hot Air Balloon": ("Capitol", "Town Center"),
+    "a Balloon10 Observation Balloon": ("Capitol", "Town Center"),
+
+    # `Siege` and `Land AA` each hold one Barracks infantryman among units
+    # built somewhere else entirely, so the family union handed a Barracks to
+    # every siege engine and every AA tank. That's the dangerous direction, and
+    # it shipped: `Epoch: Dark Age` landed on `Recruit Catapult`, which logic
+    # thought a Copper Age Barracks could reach. The Catapult is a Siege
+    # Factory unit, `Building: Siege Factory` was behind `Recruit A7V` in the
+    # Atomic Age, and the run stopped at the Dark Age with no way forward.
+    #
+    # Split per unit, because the split is per unit — `Inf02 - Sampson` really
+    # is a Barracks unit and really is family `Siege`.
+    "Gun Siege04 Catapult": ("Siege Factory",),
+    "Gun Siege06 Trebuchet": ("Siege Factory",),
+    "Gun Siege07 Basilisk Cannon": ("Siege Factory",),
+    "Gun Siege09 Serpentine Cannon": ("Siege Factory",),
+    "Gun Siege10 Howitzer Cannon": ("Siege Factory",),
+    "Gun Siege13 Paladin Cannon": ("Siege Factory",),
+    "Inf02 - Sampson": ("Barracks",),
+
+    # The same shape in `Land AA`. The Stinger Soldier is the Barracks unit —
+    # the wiki's Barracks list has it replacing the Bazooka Infantry, which is
+    # also why `gen_upgrades.EXTRA_SUPERSEDES` carries that link.
+    "10 AA - Tank": ("Tank Factory",),
+    "13 AA Tank Skywatcher": ("Tank Factory",),
+    "14 Anti Missile Battery": ("Tank Factory",),
+    "AA10 - Stinger Soldier": ("Barracks",),
 }
 
 
@@ -386,11 +660,23 @@ def _producer_epoch(db_name: str) -> int:
     return min((building_epoch(b) for b in unit_producers(db_name)), default=0)
 
 
+# Three sources, and the latest wins. The database's own figure, the epoch the
+# producing building arrives in, and the epoch a vanilla menu first draws the
+# unit.
+#
+# That last one is there because `dbobjects.dat` reads an epoch LOW for three
+# units, which is the direction that breaks seeds: logic believes a check is
+# reachable before it is, and can hide the epoch item behind it. The Sea King II
+# is stored at the Digital Age and not offered until the Nano Age, and a seed
+# put `Epoch: Nano Age` on it — you needed the Nano Age to build the helicopter
+# that held the Nano Age. Khan Sun Do and Hu Kwan Do are stored an epoch early
+# the same way. See UnitSlots.SLOT_FIRST_EPOCH.
 LOCATION_MIN_EPOCH.update({
     f"Recruit {UNIT_DISPLAY[db]}": max(
         UNIT_MIN_EPOCH.get(
             db, UNIT_FAMILY_MIN_EPOCH.get(UNIT_FAMILY_BY_NAME[db], 0)),
         _producer_epoch(db),
+        SLOT_FIRST_EPOCH.get(db, 0),
     )
     for db in ALL_RECRUITABLE
 })
@@ -428,40 +714,99 @@ PAIRED_LOCATIONS: dict[str, str] = {
 # `Inf15 - Cyber Ninja` needs Japan, or a custom civilisation with the power
 # that grants it. Marked EXCLUDED rather than dropped — still a check worth
 # sending, just never load-bearing.
+#
+# The four `(Crusader)` units are the same thing with a clearer tell: each sits
+# at the same tier and in the same family as a plain twin, which is what a
+# civilisation replacement looks like in this database. A run reached the
+# Bronze Age with two `Inf04 - Short Sword` in the roster and
+# `Epoch: Middle Ages` sitting on `Recruit Short Sword(Crusader)`, which is a
+# different unit the same building never offered.
 CIV_LOCKED_UNITS: tuple[str, ...] = (
-    "Inf15 - Cyber Ninja",
+    "Cav04 - Bronze Spear Cavalry(Crusader)",
+    "Cav06 - Knight(Crusader)",
+    "Inf04 - Short Sword(Crusader)",
+    "Inf06 - LongSword(Crusader)",
+)
+
+# Each variant and the unit it stands in for, so the pair carries each other's
+# checks. Both ways, because a civilisation fields one or the other and never
+# both — a Crusader has no plain Short Sword to send with.
+#
+# The tier above used to carry them, which is the wrong relation and it showed:
+# `Recruit Long Sword` sent `Recruit Short Sword(Crusader)` two epochs after the
+# Crusader's own floor, and `Recruit Long Sword (Crusader)` had no sender at all
+# because nothing supersedes it. Same fix as FLAMING_VARIANTS below, same
+# reason: the thing that stands in for a unit is its twin at the same tier, not
+# whatever replaces it later.
+CIV_VARIANTS: dict[str, str] = {
+    "Cav04 - Bronze Spear Cavalry": "Cav04 - Bronze Spear Cavalry(Crusader)",
+    "Cav06 - Knight": "Cav06 - Knight(Crusader)",
+    "Inf04 - Short Sword": "Inf04 - Short Sword(Crusader)",
+    "Inf06 - LongSword": "Inf06 - LongSword(Crusader)",
+}
+
+# The `(Flaming)` archers, and the archer each one is a version of.
+#
+# They arrive from the Archery Range's flaming-arrow upgrade rather than from a
+# build button, so they used to be excluded — a requirement the rules can't see
+# stranded three runs. Then the upgrade cascade carried them, which is worse
+# than it sounds: a Composite Bow sent `Recruit Simple Bowman(Flaming)`, so the
+# check needed a tier you might never reach, and a seed that ends the epoch
+# before the Composite Bow could never send it at all.
+#
+# A flaming archer is the same archer with a different arrow, so the plain one
+# sends both. That makes the variant exactly as reachable as its base, which is
+# why they are ordinary checks again rather than excluded ones.
+FLAMING_VARIANTS: dict[str, str] = {
+    "Arch03 - Simple Bowman": "Arch03 - Simple Bowman(Flaming)",
+    "Arch05 - Composite Bow": "Arch05 - Composite Bow(Flaming)",
+    "Arch06 - Long Bow": "Arch06 - Long Bow(Flaming)",
+}
+
+UPGRADE_LOCKED_UNITS: tuple[str, ...] = ()
+
+# Units whose check closes for good and can't be held open.
+#
+# A menu position that empties and never refills takes its check with it. Most
+# of those are fixed by holding the unit open past its expiry — see
+# UnitSlots.SLOT_GAPS — which works because a position nothing else wants can't
+# be squatted.
+#
+# The galleons defeat it. All three tiers hang off one node, `but_galleon_07`,
+# whose expiry already reads 15, so there is nothing to write: the Royal Galleon
+# is hidden by something other than expiry. Dock position 6 runs galley tiers to
+# the Renaissance, Imperial and Royal Galleons, and is empty from Atomic Age -
+# WWI on. Excluded on the same terms as a civilisation variant — real, sendable
+# in the Industrial Age, and never carrying the run.
+SLOT_CLOSED_UNITS: tuple[str, ...] = (
+    "s09 Royal Galleon",
 )
 
 # The same as location names, for the world to mark EXCLUDED. Filtered through
 # the lookup so a name that stops being a check can't leave a stale entry.
 CIV_LOCKED_LOCATIONS: frozenset[str] = frozenset(
     RECRUIT_LOCATION_BY_DBNAME[db]
-    for db in CIV_LOCKED_UNITS
+    for db in CIV_LOCKED_UNITS + UPGRADE_LOCKED_UNITS + SLOT_CLOSED_UNITS
     if db in RECRUIT_LOCATION_BY_DBNAME
 )
 
 # Buildings that are real, and buildable only in some matches.
 #
 # A tech tree node and a measured epoch say a building exists, not that this
-# match can raise one. The Pyramid is listed as a building by the game's own
-# wiki and measures cleanly at the Prehistoric Age, and a Space Age match
-# offered it nowhere.
+# match can raise one. An entry here stays a check and stops being
+# load-bearing: sendable if a match offers it, harmless if not.
 #
-# Why is still unexplained. The Space Dock and Space Turret looked identical
-# until they turned out to be a *map* dependency — both appear on a `Planets`
-# map — and those moved to BUILDING_TERRAINS below. The Pyramid isn't obviously
-# map-dependent, so it stays here.
-#
-# It remains a check and stops being load-bearing: sendable if a match offers
-# it, harmless if not. Remove an entry only when something guarantees the
-# conditions.
-UNCONFIRMED_BUILDINGS: tuple[str, ...] = (
-    "Pyramid",
-)
+# Empty, and both former entries left in different directions. The Space Dock
+# and Space Turret turned out to be a *map* dependency — both appear on a
+# `Planets` map — and moved to BUILDING_TERRAINS below. The Pyramid turned out
+# to be offered by nothing at all, at which point demoting a check nobody can
+# send is worse than not generating it, so it moved to the exclusions in
+# tools/gen_objects.py and stopped being a building.
+UNCONFIRMED_BUILDINGS: tuple[str, ...] = ()
 
 # Buildings that *replace* another on some maps rather than joining it.
 #
-# A `Planets` map has no Dock and no Navy Yard — the Space Dock and Space
+# A `Planets` map has no Dock and no Naval Yard — the Space Dock and Space
 # Turret stand in their place. So `Build Dock` can never be sent there, and
 # `Build Space Dock` can never be sent anywhere else. Both are ordinary
 # progression-bearing checks, so either way round strands a seed.
@@ -472,7 +817,7 @@ UNCONFIRMED_BUILDINGS: tuple[str, ...] = (
 # `Build Dock` too. Sending a location the seed doesn't contain costs nothing.
 BUILDING_PAIRS: dict[str, str] = {
     "Dock": "Space Dock",
-    "Navy Yard": "Space Turret",
+    "Naval Yard": "Space Turret",
 }
 
 # Which terrains a building exists on. Anything absent is on all of them.
@@ -491,12 +836,17 @@ ALL_TERRAINS = frozenset({LAND_ONLY, LAND_AND_WATER, SPACE})
 BUILDING_TERRAINS: dict[str, frozenset[str]] = {
     # No water, no Dock; on a Planets map a Space Dock stands in its place.
     "Dock": frozenset({LAND_AND_WATER}),
-    "Navy Yard": frozenset({LAND_AND_WATER}),
+    "Naval Yard": frozenset({LAND_AND_WATER}),
     "Space Dock": frozenset({SPACE}),
     "Space Turret": frozenset({SPACE}),
 }
 
+# A space map swaps two wonders as well as two buildings: the Future Research
+# Sentinel stands where the Coliseum does everywhere else. A land seed offered
+# the Sentinel, which no such match can build.
 WONDER_TERRAINS: dict[str, frozenset[str]] = {
+    "Coliseum": frozenset({LAND_ONLY, LAND_AND_WATER}),
+    "Future Research Sentinel": frozenset({SPACE}),
     "Pharos Lighthouse": frozenset({LAND_ONLY, LAND_AND_WATER}),
     "Orbital Space Station": frozenset({SPACE}),
 }
@@ -544,19 +894,116 @@ def _recruit_location(db_name: str) -> str | None:
 #
 # The epoch floors are unaffected. A check's floor is the earliest point it can
 # be sent, and that is still the unit's own tier — a Slinger sends Slinger.
+# Buildings share build-menu positions the way units do, and only two ever
+# change hands: the Airport takes the Archery Range's, the Tank Factory takes
+# the Stable's. Read off a vanilla game across all fifteen epochs; see
+# tools/data/building_slots.tsv.
+BUILDING_SUCCESSORS: dict[str, str] = {
+    "Archery Range": "Airport",
+    "Stable": "Tank Factory",
+}
+
+_CIV_PLAIN_BY_VARIANT: dict[str, str] = {v: k for k, v in CIV_VARIANTS.items()}
+_CIV_VARIANT_UNITS: frozenset[str] = frozenset(CIV_VARIANTS.values())
+
 LOCATION_ALSO_SENDS: dict[str, tuple[str, ...]] = {}
 for _here, _partner in _PAIRED_BUILD_LOCATIONS.items():
     LOCATION_ALSO_SENDS[_here] = (_partner,)
 
+# A building that takes another's position carries its check, and so does
+# everything it trains. The slot cascade is per position; this is per building,
+# and deliberately more generous — once the Airport is up, an Archery Range can
+# never be built again, so *any* aircraft has to be able to send *any* archer's
+# check or those checks are stranded. Extra sends cost a free check; a missing
+# one costs the run.
+for _earlier, _later in BUILDING_SUCCESSORS.items():
+    _a, _b = f"Build {_earlier}", f"Build {_later}"
+    if _a in BUILD_LOCATIONS and _b in BUILD_LOCATIONS:
+        LOCATION_ALSO_SENDS[_b] = tuple(
+            dict.fromkeys(LOCATION_ALSO_SENDS.get(_b, ()) + (_a,)))
+
+# Which building position each unit occupies, for filtering the upgrade
+# cascade below.
+_SEATS: dict[str, set[tuple[str, int]]] = {}
+for _b, _seats in UNIT_SLOTS.items():
+    for _n, _seat in enumerate(_seats):
+        for _member in _seat:
+            _SEATS.setdefault(_member, set()).add((_b, _n))
+
+
+def _same_seat(later: str, earlier: str) -> bool:
+    """Do these two ever share a build-menu position?
+
+    True when either is missing from the tables, because a unit with no
+    observed position can't be shown to be somewhere else, and dropping its
+    cascade on a guess is how a check goes missing.
+    """
+    a, b = _SEATS.get(later), _SEATS.get(earlier)
+    return not a or not b or bool(a & b)
+
+
 for _db in ALL_RECRUITABLE:
     _here = RECRUIT_LOCATION_BY_DBNAME[_db]
     _also = [PAIRED_LOCATIONS[_here]] if _here in PAIRED_LOCATIONS else []
+    # Only where the two share a menu position. `dbobjects.dat` calls the
+    # Bazooka a replacement for the Hand Cannoneer and the Sharpshooter, which
+    # the menu flatly contradicts — the Bazooka is Barracks slot 3, the Hand
+    # Cannoneer slot 4, the Sharpshooter slot 5, and all three are drawn at
+    # once. An upgrade that replaces a unit does so in place, so a pair in two
+    # different positions isn't one. 32 of the 303 pairs go this way.
+    #
+    # Safe to drop because the position still carries the check: whatever takes
+    # slot 4 next sends the Hand Cannoneer's. `run_dead_slots` is what proves
+    # it, and it covers the positions nothing takes next.
+    #
     # Some superseded units aren't checks at all (scenario props), so the
     # lookup is filtered rather than assumed.
-    _also += [loc for loc in map(_recruit_location, UNIT_SUPERSEDES.get(_db, ()))
+    _also += [loc for loc in
+              map(_recruit_location,
+                  (u for u in UNIT_SUPERSEDES.get(_db, ())
+                   if _same_seat(_db, u) and u not in _CIV_VARIANT_UNITS))
               if loc is not None]
+    # And everything that held this unit's menu position before it. A slot is
+    # not the upgrade chain — Barracks slot 4 runs Sampson, Viking, Hand
+    # Cannoneer, Trench Mortar, Heavy Mortar, and no upgrade connects any of
+    # them — but it is what decides whether a unit is still offered. When the
+    # next line takes the position the one before it is gone for the rest of
+    # the match, so its check has to travel with the slot or it stops being
+    # sendable. See UnitSlots.py.
+    _also += [loc for loc in map(_recruit_location, SLOT_PREDECESSORS.get(_db, ()))
+              if loc is not None]
+    # A plain archer sends its flaming version, because they are one unit with
+    # two arrows. See FLAMING_VARIANTS.
+    if _db in FLAMING_VARIANTS:
+        _flaming = _recruit_location(FLAMING_VARIANTS[_db])
+        if _flaming is not None:
+            _also.append(_flaming)
+    # A unit and the civilisation variant that stands in for it, each way. See
+    # CIV_VARIANTS.
+    for _twin in (CIV_VARIANTS.get(_db), _CIV_PLAIN_BY_VARIANT.get(_db)):
+        if _twin:
+            _loc = _recruit_location(_twin)
+            if _loc is not None:
+                _also.append(_loc)
     if _also:
         LOCATION_ALSO_SENDS[_here] = tuple(dict.fromkeys(_also))
+
+# The same, per unit. Built after the loop above so it can extend what the
+# slot and upgrade cascades already put there.
+_BY_BUILDING: dict[str, list[str]] = {}
+for _db in ALL_RECRUITABLE:
+    for _b in unit_producers(_db):
+        _BY_BUILDING.setdefault(_b, []).append(_db)
+
+for _earlier, _later in BUILDING_SUCCESSORS.items():
+    _olds = [_recruit_location(d) for d in _BY_BUILDING.get(_earlier, ())]
+    _olds = [x for x in _olds if x is not None]
+    for _db in _BY_BUILDING.get(_later, ()):
+        _here = _recruit_location(_db)
+        if _here is None or not _olds:
+            continue
+        LOCATION_ALSO_SENDS[_here] = tuple(
+            dict.fromkeys(LOCATION_ALSO_SENDS.get(_here, ()) + tuple(_olds)))
 
 # Location name -> the buildings that can train it. Resolved per unit, so the
 # rules never go back to the family — which is what got the Canine Scout
@@ -575,6 +1022,24 @@ NO_PROGRESSION_LOCATIONS: frozenset[str] = (
     | frozenset(f"Build {b}" for b in UNCONFIRMED_BUILDINGS
                 if f"Build {b}" in BUILD_LOCATIONS)
 )
+
+# The four checks you can send in the first thirty seconds, reserved for things
+# the seed needs.
+#
+# A match starts with a Capitol and the units it makes, so these are sendable
+# before you have done anything at all — no epoch, no unlock, no building. Fill
+# treats them as ordinary checks otherwise, and a run that opens with four
+# resource bundles has nothing to do with them.
+#
+# `PRIORITY` is a preference, not a guarantee: fill takes progression items for
+# these first and falls back to whatever is left if it runs out. With over a
+# hundred progression items against four locations that doesn't come up.
+PRIORITY_LOCATIONS: frozenset[str] = frozenset({
+    "Build Capitol",
+    "Recruit Citizen",
+    "Recruit Female Citizen",
+    "Recruit Canine Scout",
+})
 
 # Location name -> the building that researches it. One building each, so with
 # unlocks on a check needs that building as well as the epoch. Printing Press
